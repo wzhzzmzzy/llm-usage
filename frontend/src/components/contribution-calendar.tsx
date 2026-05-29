@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef, useCallback } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import type { DailyReport } from '../api/types';
 
 interface ContributionCalendarProps {
@@ -43,7 +43,6 @@ function getIntensity(cost: number): number {
 
 export function ContributionCalendar({ data, onDayClick }: ContributionCalendarProps) {
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   const { grid } = useMemo(() => {
     const today = new Date();
@@ -118,71 +117,73 @@ export function ContributionCalendar({ data, onDayClick }: ContributionCalendarP
   const height = 7 * (CELL_SIZE + CELL_GAP) + 30;
 
   return (
-    <div className="overflow-x-auto relative" ref={containerRef}>
-      <svg width={width} height={height} className="font-sans text-xs">
-        {months.map(({ label, weekIndex }) => (
-          <text
-            key={`${label}-${weekIndex}`}
-            x={weekIndex * (CELL_SIZE + CELL_GAP) + 40}
-            y={12}
-            fill="currentColor"
-            className="fill-muted-foreground"
-          >
-            {label}
-          </text>
-        ))}
+    <div className="relative">
+      <div className="overflow-x-auto">
+        <svg width={width} height={height} className="font-sans text-xs">
+          {months.map(({ label, weekIndex }) => (
+            <text
+              key={`${label}-${weekIndex}`}
+              x={weekIndex * (CELL_SIZE + CELL_GAP) + 40}
+              y={12}
+              fill="currentColor"
+              className="fill-muted-foreground"
+            >
+              {label}
+            </text>
+          ))}
 
-        {['', 'Mon', '', 'Wed', '', 'Fri', ''].map((label, i) => (
-          <text
-            key={i}
-            x={0}
-            y={i * (CELL_SIZE + CELL_GAP) + 28}
-            fill="currentColor"
-            className="fill-muted-foreground"
-          >
-            {label}
-          </text>
-        ))}
+          {['', 'Mon', '', 'Wed', '', 'Fri', ''].map((label, i) => (
+            <text
+              key={i}
+              x={0}
+              y={i * (CELL_SIZE + CELL_GAP) + 28}
+              fill="currentColor"
+              className="fill-muted-foreground"
+            >
+              {label}
+            </text>
+          ))}
 
-        {grid.map((week, weekIndex) =>
-          week.map((day, dayIndex) => {
-            const intensity = getIntensity(day.cost);
-            return (
-              <rect
-                key={day.date}
-                x={weekIndex * (CELL_SIZE + CELL_GAP) + 40}
-                y={dayIndex * (CELL_SIZE + CELL_GAP) + 18}
-                width={CELL_SIZE}
-                height={CELL_SIZE}
-                rx={2}
-                fill={COLORS[intensity]}
-                className="cursor-pointer hover:stroke-2 hover:stroke-foreground"
-                onClick={() => onDayClick?.(day.date)}
-                onMouseEnter={() => handleMouseEnter(day, weekIndex, dayIndex)}
-                onMouseLeave={handleMouseLeave}
-              />
-            );
-          })
-        )}
-      </svg>
+          {grid.map((week, weekIndex) =>
+            week.map((day, dayIndex) => {
+              const intensity = getIntensity(day.cost);
+              return (
+                <rect
+                  key={day.date}
+                  x={weekIndex * (CELL_SIZE + CELL_GAP) + 40}
+                  y={dayIndex * (CELL_SIZE + CELL_GAP) + 18}
+                  width={CELL_SIZE}
+                  height={CELL_SIZE}
+                  rx={2}
+                  fill={COLORS[intensity]}
+                  className="cursor-pointer hover:stroke-2 hover:stroke-foreground"
+                  onClick={() => onDayClick?.(day.date)}
+                  onMouseEnter={() => handleMouseEnter(day, weekIndex, dayIndex)}
+                  onMouseLeave={handleMouseLeave}
+                />
+              );
+            })
+          )}
+        </svg>
+      </div>
 
       {tooltip && (
         <div
-          className="absolute z-50 bg-popover border rounded-md shadow-md p-3 text-sm pointer-events-none"
+          className="absolute z-50 bg-white border rounded-md shadow-lg p-3 text-sm pointer-events-none"
           style={{
             left: tooltip.x,
             top: tooltip.y - 8,
             transform: 'translate(-50%, -100%)',
           }}
         >
-          <div className="font-medium mb-1">{tooltip.day.date}</div>
-          <div className="space-y-0.5 text-muted-foreground">
-            <div>Cost: <span className="text-foreground font-medium">${tooltip.day.cost.toFixed(2)}</span></div>
-            <div>Tokens: <span className="text-foreground font-medium">{tooltip.day.tokens.toLocaleString()}</span></div>
-            <div>Input: <span className="text-foreground">{tooltip.day.inputTokens.toLocaleString()}</span></div>
-            <div>Output: <span className="text-foreground">{tooltip.day.outputTokens.toLocaleString()}</span></div>
+          <div className="font-medium mb-1 text-gray-900">{tooltip.day.date}</div>
+          <div className="space-y-0.5 text-gray-600">
+            <div>Cost: <span className="text-gray-900 font-medium">${tooltip.day.cost.toFixed(2)}</span></div>
+            <div>Tokens: <span className="text-gray-900 font-medium">{tooltip.day.tokens.toLocaleString()}</span></div>
+            <div>Input: <span className="text-gray-900">{tooltip.day.inputTokens.toLocaleString()}</span></div>
+            <div>Output: <span className="text-gray-900">{tooltip.day.outputTokens.toLocaleString()}</span></div>
             {tooltip.day.models.length > 0 && (
-              <div className="mt-1 pt-1 border-t">
+              <div className="mt-1 pt-1 border-t border-gray-200">
                 {tooltip.day.models.slice(0, 3).map((m, i) => (
                   <div key={i} className="text-xs truncate max-w-[200px]">{m}</div>
                 ))}
