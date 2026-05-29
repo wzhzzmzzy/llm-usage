@@ -106,7 +106,7 @@ function App() {
       setRefreshStatus(status);
 
       if (status.isRefreshing) {
-        pollIntervalRef.current = window.setInterval(pollRefreshStatus, 1000);
+        pollIntervalRef.current = window.setInterval(pollRefreshStatus, 5000);
       } else {
         setLoading(false);
         await loadSnapshot();

@@ -429,6 +429,32 @@ impl PricingMap {
             },
         );
         self.entries.insert(
+            "gpt-5.4-mini-fast".to_string(),
+            Pricing {
+                input: 0.75e-6,
+                output: 4.5e-6,
+                cache_create: 0.75e-6,
+                cache_read: 0.075e-6,
+                input_above_200k: None,
+                output_above_200k: None,
+                cache_create_above_200k: None,
+                cache_read_above_200k: None,
+            },
+        );
+        self.entries.insert(
+            "mimo-v2.5-pro".to_string(),
+            Pricing {
+                input: 0.44e-6,
+                output: 0.88e-6,
+                cache_create: 0.55e-6,
+                cache_read: 0.0036e-6,
+                input_above_200k: None,
+                output_above_200k: None,
+                cache_create_above_200k: None,
+                cache_read_above_200k: None,
+            },
+        );
+        self.entries.insert(
             "gpt-5.4-nano".to_string(),
             Pricing {
                 input: 0.2e-6,
