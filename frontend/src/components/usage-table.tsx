@@ -8,7 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { ChevronRight, ChevronDown } from 'lucide-react';
+import { ChevronDown, Layers, Cpu } from 'lucide-react';
 
 interface UsageTableProps {
   data: DailyRow[] | MonthlyRow[] | SessionRow[] | BlockRow[];
@@ -23,6 +23,30 @@ function fmt(n: number | undefined): string {
 
 interface ExpandedState {
   [key: string]: 'source' | 'model' | null;
+}
+
+function ExpandButton({
+  isExpanded,
+  onClick,
+  type,
+}: {
+  isExpanded: boolean;
+  onClick: () => void;
+  type: 'source' | 'model';
+}) {
+  const Icon = type === 'source' ? Layers : Cpu;
+  const expandedIcon = <ChevronDown className="h-3.5 w-3.5" />;
+  const collapsedIcon = <Icon className="h-3.5 w-3.5" />;
+
+  return (
+    <button
+      onClick={onClick}
+      className={`p-0.5 hover:bg-muted rounded ${type === 'source' ? 'text-emerald-600' : 'text-violet-600'}`}
+      title={type === 'source' ? 'Drill down by source' : 'Drill down by model'}
+    >
+      {isExpanded ? expandedIcon : collapsedIcon}
+    </button>
+  );
 }
 
 function SourceBreakdownRow({
@@ -152,28 +176,18 @@ function DailyTable({
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-1">
                       {showSourceDrilldown && (
-                        <button
+                        <ExpandButton
+                          isExpanded={isExpanded === 'source'}
                           onClick={() => toggleExpand(rowKey, 'source')}
-                          className="p-0.5 hover:bg-muted rounded"
-                        >
-                          {isExpanded === 'source' ? (
-                            <ChevronDown className="h-4 w-4" />
-                          ) : (
-                            <ChevronRight className="h-4 w-4" />
-                          )}
-                        </button>
+                          type="source"
+                        />
                       )}
                       {hasModelBreakdown && (
-                        <button
+                        <ExpandButton
+                          isExpanded={isExpanded === 'model'}
                           onClick={() => toggleExpand(rowKey, 'model')}
-                          className="p-0.5 hover:bg-muted rounded"
-                        >
-                          {isExpanded === 'model' ? (
-                            <ChevronDown className="h-4 w-4" />
-                          ) : (
-                            <ChevronRight className="h-4 w-4" />
-                          )}
-                        </button>
+                          type="model"
+                        />
                       )}
                       {!showSourceDrilldown && !hasModelBreakdown && (
                         <span className="w-5" />
@@ -263,28 +277,18 @@ function MonthlyTable({
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-1">
                       {showSourceDrilldown && (
-                        <button
+                        <ExpandButton
+                          isExpanded={isExpanded === 'source'}
                           onClick={() => toggleExpand(rowKey, 'source')}
-                          className="p-0.5 hover:bg-muted rounded"
-                        >
-                          {isExpanded === 'source' ? (
-                            <ChevronDown className="h-4 w-4" />
-                          ) : (
-                            <ChevronRight className="h-4 w-4" />
-                          )}
-                        </button>
+                          type="source"
+                        />
                       )}
                       {hasModelBreakdown && (
-                        <button
+                        <ExpandButton
+                          isExpanded={isExpanded === 'model'}
                           onClick={() => toggleExpand(rowKey, 'model')}
-                          className="p-0.5 hover:bg-muted rounded"
-                        >
-                          {isExpanded === 'model' ? (
-                            <ChevronDown className="h-4 w-4" />
-                          ) : (
-                            <ChevronRight className="h-4 w-4" />
-                          )}
-                        </button>
+                          type="model"
+                        />
                       )}
                       {!showSourceDrilldown && !hasModelBreakdown && (
                         <span className="w-5" />
@@ -365,16 +369,11 @@ function SessionTable({ data }: { data: SessionRow[] }) {
                   <TableCell className="font-mono text-xs">
                     <div className="flex items-center gap-1">
                       {hasModelBreakdown && (
-                        <button
+                        <ExpandButton
+                          isExpanded={!!isExpanded}
                           onClick={() => toggleExpand(rowKey)}
-                          className="p-0.5 hover:bg-muted rounded"
-                        >
-                          {isExpanded ? (
-                            <ChevronDown className="h-4 w-4" />
-                          ) : (
-                            <ChevronRight className="h-4 w-4" />
-                          )}
-                        </button>
+                          type="model"
+                        />
                       )}
                       {!hasModelBreakdown && <span className="w-5" />}
                       {row.sessionId.slice(0, 8)}

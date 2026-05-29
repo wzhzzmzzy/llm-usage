@@ -6,7 +6,7 @@ description = "Local-first personal LLM usage dashboard"
 
 [features]
 default = ["web"]
-web = []
+web = ["rust-embed", "mime_guess"]
 desktop = ["tauri"]
 
 [dependencies]
@@ -55,6 +55,10 @@ uuid = { version = "1", features = ["v4"] }
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
+
+# Embedded frontend (web only)
+rust-embed = { version = "8", optional = true }
+mime_guess = { version = "2", optional = true }
 
 # Tauri (optional, for desktop)
 tauri = { version = "1", optional = true, features = ["shell-open"] }

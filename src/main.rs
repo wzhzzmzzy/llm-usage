@@ -42,15 +42,16 @@ async fn main() -> anyhow::Result<()> {
             let refresh_manager = Arc::new(core::refresh::RefreshManager::new(config));
             let state = server::AppState { refresh_manager };
 
-            let frontend_path = std::env::current_dir()
-                .unwrap_or_default()
-                .join("frontend")
-                .join("dist");
+            #[cfg(feature = "web")]
+            let router = server::create_router_with_frontend(state);
 
-            let router = if frontend_path.exists() {
+            #[cfg(not(feature = "web"))]
+            let router = {
+                let frontend_path = std::env::current_dir()
+                    .unwrap_or_default()
+                    .join("frontend")
+                    .join("dist");
                 server::create_router_with_frontend(state, frontend_path.to_str().unwrap_or("frontend/dist"))
-            } else {
-                server::create_router(state)
             };
 
             let addr = format!("{}:{}", server_config.host, server_config.port);

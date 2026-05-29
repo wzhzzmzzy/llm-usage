@@ -7,7 +7,9 @@ use axum::{
 };
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
-use tower_http::services::ServeDir;
+
+#[cfg(feature = "web")]
+mod embedded;
 
 use crate::core::model::{HealthResponse, Snapshot};
 use crate::core::refresh::{RefreshManager, RefreshStatus};
@@ -27,7 +29,25 @@ pub fn create_router(state: AppState) -> Router {
         .with_state(state)
 }
 
+#[cfg(feature = "web")]
+pub fn create_router_with_frontend(state: AppState) -> Router {
+    let api_router = Router::new()
+        .route("/api/health", get(health))
+        .route("/api/refresh", post(refresh))
+        .route("/api/refresh-status", get(refresh_status))
+        .route("/api/snapshot", get(get_snapshot))
+        .with_state(state);
+
+    Router::new()
+        .merge(api_router)
+        .fallback(get(embedded::serve_frontend))
+        .layer(CorsLayer::permissive())
+}
+
+#[cfg(not(feature = "web"))]
 pub fn create_router_with_frontend(state: AppState, frontend_path: &str) -> Router {
+    use tower_http::services::ServeDir;
+
     let api_router = Router::new()
         .route("/api/health", get(health))
         .route("/api/refresh", post(refresh))
