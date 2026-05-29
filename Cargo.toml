@@ -1,0 +1,57 @@
+[package]
+name = "llm-usage"
+version = "0.1.0"
+edition = "2021"
+description = "Local-first personal LLM usage dashboard"
+
+[features]
+default = ["web"]
+web = []
+desktop = ["tauri"]
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+
+# Web server
+axum = { version = "0.7", features = ["macros"] }
+tower = { version = "0.4", features = ["util"] }
+tower-http = { version = "0.5", features = ["cors", "fs"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Config
+dirs = "5"
+toml = "0.8"
+
+# Decimal for money
+rust_decimal = { version = "1", features = ["serde-with-str"] }
+
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+# Async trait
+async-trait = "0.1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# UUID for sessions
+uuid = { version = "1", features = ["v4"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Tauri (optional, for desktop)
+tauri = { version = "1", optional = true, features = ["shell-open"] }
+
+[dev-dependencies]
+tokio-test = "0.4"

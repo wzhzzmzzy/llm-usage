@@ -1,0 +1,43 @@
+{
+  "build": {
+    "beforeDevCommand": "./src-tauri/dev.sh",
+    "beforeBuildCommand": "./src-tauri/build.sh",
+    "devPath": "http://localhost:5173",
+    "distDir": "../frontend/dist"
+  },
+  "package": {
+    "productName": "LLM Usage Dashboard",
+    "version": "0.1.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": false,
+      "shell": {
+        "all": false,
+        "open": true
+      }
+    },
+    "bundle": {
+      "active": true,
+      "targets": "all",
+      "identifier": "com.llm-usage.dashboard",
+      "icon": [
+        "icons/32x32.png",
+        "icons/128x128.png",
+        "icons/128x128@2x.png"
+      ]
+    },
+    "security": {
+      "csp": null
+    },
+    "windows": [
+      {
+        "fullscreen": false,
+        "resizable": true,
+        "title": "LLM Usage Dashboard",
+        "width": 1200,
+        "height": 800
+      }
+    ]
+  }
+}
