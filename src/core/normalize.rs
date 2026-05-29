@@ -71,6 +71,35 @@ pub struct RawSessionAggregate {
     pub model_breakdown: Option<Vec<ModelBreakdown>>,
 }
 
+/// Raw block aggregate from provider JSON
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RawBlockAggregate {
+    pub block_id: String,
+    #[serde(default)]
+    pub start_time: String,
+    #[serde(default)]
+    pub end_time: String,
+    #[serde(default)]
+    pub actual_end_time: Option<String>,
+    #[serde(default)]
+    pub is_active: bool,
+    #[serde(default)]
+    pub total_tokens: u64,
+    #[serde(default)]
+    pub input_tokens: u64,
+    #[serde(default)]
+    pub cache_read_tokens: u64,
+    #[serde(default)]
+    pub output_tokens: u64,
+    #[serde(default)]
+    pub request_count: Option<u64>,
+    #[serde(default)]
+    pub models_used: Option<Vec<String>>,
+    #[serde(default)]
+    pub model_breakdown: Option<Vec<ModelBreakdown>>,
+}
+
 pub struct Normalizer;
 
 impl Normalizer {
@@ -207,6 +236,61 @@ impl Normalizer {
 
         Ok(SessionReport {
             sessions,
+            totals: UsageMetric {
+                total_tokens,
+                input_tokens: total_input,
+                cache_read_tokens: total_cache_read,
+                output_tokens: total_output,
+                request_count: Some(total_requests),
+                model_breakdown: None,
+            },
+        })
+    }
+
+    pub fn normalize_blocks(rows: &[RawBlockAggregate]) -> Result<BlocksReport, NormalizeError> {
+        let mut blocks = Vec::new();
+        let mut total_tokens = 0u64;
+        let mut total_input = 0u64;
+        let mut total_cache_read = 0u64;
+        let mut total_output = 0u64;
+        let mut total_requests = 0u64;
+
+        for row in rows {
+            let start_time = chrono::DateTime::parse_from_rfc3339(&row.start_time)
+                .ok()
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .unwrap_or_default();
+
+            let end_time = chrono::DateTime::parse_from_rfc3339(&row.end_time)
+                .ok()
+                .map(|dt| dt.with_timezone(&chrono::Utc));
+
+            total_tokens += row.total_tokens;
+            total_input += row.input_tokens;
+            total_cache_read += row.cache_read_tokens;
+            total_output += row.output_tokens;
+            total_requests += row.request_count.unwrap_or(0);
+
+            blocks.push(BlockRow {
+                block_id: row.block_id.clone(),
+                start_time,
+                end_time,
+                total_tokens: row.total_tokens,
+                input_tokens: row.input_tokens,
+                cache_read_tokens: row.cache_read_tokens,
+                output_tokens: row.output_tokens,
+                is_active: row.is_active,
+                models_used: row.models_used.clone(),
+            });
+        }
+
+        blocks.sort_by(|a, b| b.start_time.cmp(&a.start_time));
+
+        let active_block = blocks.iter().find(|b| b.is_active).cloned();
+
+        Ok(BlocksReport {
+            blocks,
+            active_block,
             totals: UsageMetric {
                 total_tokens,
                 input_tokens: total_input,

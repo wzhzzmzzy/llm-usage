@@ -1,4 +1,4 @@
-export type Source = 'all' | 'claude' | 'codex' | 'opencode';
+export type Source = 'all' | 'claude' | 'codex' | 'gemini' | 'opencode';
 export type ReportType = 'daily' | 'monthly' | 'session' | 'blocks';
 export type CellStatus = 'success' | 'stale' | 'error';
 export type SnapshotStatus = 'success' | 'partial' | 'error' | 'nodata';

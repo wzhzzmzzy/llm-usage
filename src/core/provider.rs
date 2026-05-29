@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 
-use crate::core::adapter::{claude::ClaudeAdapter, codex::CodexAdapter, opencode::OpenCodeAdapter, UsageAdapter, UsageEntry};
+use crate::core::adapter::{claude::ClaudeAdapter, codex::CodexAdapter, gemini::GeminiAdapter, opencode::OpenCodeAdapter, UsageAdapter, UsageEntry};
 use crate::core::model::*;
 
 /// Cached entries for a single source (claude/codex/opencode)
@@ -15,17 +15,24 @@ struct SourceCache {
 pub struct NativeUsageProvider {
     adapters: Vec<Box<dyn UsageAdapter>>,
     source_cache: RwLock<HashMap<Source, SourceCache>>,
+    block_duration_hours: i64,
 }
 
 impl NativeUsageProvider {
     pub fn new() -> Self {
+        Self::with_block_duration(5)
+    }
+
+    pub fn with_block_duration(block_duration_hours: i64) -> Self {
         Self {
             adapters: vec![
                 Box::new(ClaudeAdapter::new()),
                 Box::new(CodexAdapter::new()),
+                Box::new(GeminiAdapter::new()),
                 Box::new(OpenCodeAdapter::new()),
             ],
             source_cache: RwLock::new(HashMap::new()),
+            block_duration_hours,
         }
     }
 
@@ -96,7 +103,8 @@ impl NativeUsageProvider {
                 serde_json::to_string(&aggregates)?
             }
             ReportType::Blocks => {
-                serde_json::json!([]).to_string()
+                let aggregates = any_adapter.aggregate_blocks(&entries, self.block_duration_hours);
+                serde_json::to_string(&aggregates)?
             }
         };
 
@@ -151,6 +159,7 @@ mod tests {
         let cache = provider.source_cache.read().await;
         assert!(cache.contains_key(&Source::Claude));
         assert!(cache.contains_key(&Source::Codex));
+        assert!(cache.contains_key(&Source::Gemini));
         assert!(cache.contains_key(&Source::Opencode));
     }
 

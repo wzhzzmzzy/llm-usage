@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::config::AppConfig;
 use crate::core::error::RefreshError;
 use crate::core::model::*;
-use crate::core::normalize::{Normalizer, RawDailyAggregate, RawMonthlyAggregate, RawSessionAggregate};
+use crate::core::normalize::{Normalizer, RawBlockAggregate, RawDailyAggregate, RawMonthlyAggregate, RawSessionAggregate};
 
 pub const MAX_CONCURRENT_COMMANDS: usize = 8;
 pub const COMMAND_TIMEOUT_SECS: u64 = 15;
@@ -33,9 +33,9 @@ pub struct RefreshManager {
 use crate::core::provider::NativeUsageProvider;
 
 impl RefreshManager {
-    pub fn new(_config: AppConfig) -> Self {
+    pub fn new(config: AppConfig) -> Self {
         Self {
-            provider: Arc::new(NativeUsageProvider::new()),
+            provider: Arc::new(NativeUsageProvider::with_block_duration(config.block_duration_hours)),
             snapshot: Arc::new(Mutex::new(Snapshot::default())),
             is_refreshing: Arc::new(RwLock::new(false)),
             last_error: Arc::new(Mutex::new(None)),
@@ -220,7 +220,7 @@ impl RefreshManager {
         let mut cells = Vec::new();
         let mut has_any_source = false;
 
-        for source in [Source::Claude, Source::Codex, Source::Opencode] {
+        for source in [Source::Claude, Source::Codex, Source::Gemini, Source::Opencode] {
             if provider.source_has_data(source) {
                 has_any_source = true;
                 for report in ReportType::all_variants() {
@@ -278,7 +278,9 @@ impl RefreshManager {
                 snapshot.session.insert(key, report);
             }
             ReportType::Blocks => {
-                // Blocks not yet implemented
+                let rows: Vec<RawBlockAggregate> = serde_json::from_str(json)?;
+                let report = Normalizer::normalize_blocks(&rows)?;
+                snapshot.blocks.insert(key, report);
             }
         }
 

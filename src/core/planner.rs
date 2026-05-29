@@ -32,6 +32,7 @@ impl CommandPlanner {
             Source::All => {}
             Source::Claude => args.push("claude".to_string()),
             Source::Codex => args.push("codex".to_string()),
+            Source::Gemini => args.push("gemini".to_string()),
             Source::Opencode => args.push("opencode".to_string()),
         }
 
@@ -127,10 +128,10 @@ mod tests {
     }
 
     #[test]
-    fn test_plan_all_returns_16_commands() {
+    fn test_plan_all_returns_20_commands() {
         let planner = CommandPlanner::new(test_config());
         let cmds = planner.plan_all();
-        assert_eq!(cmds.len(), 16);
+        assert_eq!(cmds.len(), 20);
     }
 
     #[test]

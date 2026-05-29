@@ -72,6 +72,7 @@ const SOURCES: { value: Source; label: string }[] = [
   { value: 'all', label: 'All Sources' },
   { value: 'claude', label: 'Claude' },
   { value: 'codex', label: 'Codex' },
+  { value: 'gemini', label: 'Gemini' },
   { value: 'opencode', label: 'OpenCode' },
 ];
 
@@ -357,7 +358,7 @@ function App() {
           </CardHeader>
           <CardContent>
             {view === 'table' ? (
-              <UsageTable data={tableData} type={tab} />
+              <UsageTable data={tableData} type={tab} snapshot={snapshot ?? undefined} source={source} />
             ) : (
               <UsageChart data={tableData} type={tab} />
             )}

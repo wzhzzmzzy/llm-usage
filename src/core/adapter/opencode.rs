@@ -1,7 +1,7 @@
 use std::env;
 use std::path::{Path, PathBuf};
 
-use super::{build_model_breakdown, DailyAggregate, MonthlyAggregate, SessionAggregate, UsageAdapter, UsageEntry};
+use super::{aggregate_blocks_impl, build_model_breakdown, BlockAggregate, DailyAggregate, MonthlyAggregate, SessionAggregate, UsageAdapter, UsageEntry};
 use crate::core::model::Source;
 
 /// OpenCode usage adapter - reads from SQLite database
@@ -221,6 +221,10 @@ impl UsageAdapter for OpenCodeAdapter {
         });
         result
     }
+
+    fn aggregate_blocks(&self, entries: &[UsageEntry], block_duration_hours: i64) -> Vec<BlockAggregate> {
+        aggregate_blocks_impl(entries, block_duration_hours)
+    }
 }
 
 /// Load usage entries from OpenCode SQLite database
@@ -233,16 +237,17 @@ fn load_from_sqlite(db_path: &Path) -> Result<Vec<UsageEntry>, Box<dyn std::erro
     let session_dirs = load_session_dirs(&conn)?;
 
     let mut stmt = conn.prepare(
-        "SELECT data FROM message WHERE json_extract(data, '$.role') = 'assistant'",
+        "SELECT session_id, data FROM message WHERE json_extract(data, '$.role') = 'assistant'",
     )?;
 
     let entries = stmt
         .query_map([], |row| {
-            let data_str: String = row.get(0)?;
-            Ok(data_str)
+            let session_id: String = row.get(0)?;
+            let data_str: String = row.get(1)?;
+            Ok((session_id, data_str))
         })?
         .filter_map(|r| r.ok())
-        .filter_map(|data_str| parse_message_json(&data_str, &session_dirs))
+        .filter_map(|(session_id, data_str)| parse_message_json(&data_str, &session_id, &session_dirs))
         .collect();
 
     Ok(entries)
@@ -261,10 +266,9 @@ fn load_session_dirs(conn: &rusqlite::Connection) -> Result<std::collections::Ha
 }
 
 /// Parse a message JSON string into a UsageEntry
-fn parse_message_json(json_str: &str, session_dirs: &std::collections::HashMap<String, String>) -> Option<UsageEntry> {
+fn parse_message_json(json_str: &str, session_id: &str, session_dirs: &std::collections::HashMap<String, String>) -> Option<UsageEntry> {
     let value: serde_json::Value = serde_json::from_str(json_str).ok()?;
 
-    // Skip entries without tokens
     let tokens = value.get("tokens")?;
 
     let input_tokens = tokens.get("input").and_then(|t| t.as_u64()).unwrap_or(0);
@@ -306,16 +310,10 @@ fn parse_message_json(json_str: &str, session_dirs: &std::collections::HashMap<S
         String::new()
     };
 
-    let session_id = value
-        .get("sessionID")
-        .and_then(|s| s.as_str())
-        .unwrap_or("unknown")
-        .to_string();
-
-    let project_path = session_dirs.get(&session_id).cloned();
+    let project_path = session_dirs.get(session_id).cloned();
 
     Some(UsageEntry {
-        session_id,
+        session_id: session_id.to_string(),
         timestamp,
         model,
         input_tokens,
@@ -345,7 +343,7 @@ mod tests {
             }
         }"#;
 
-        let entry = parse_message_json(json, &std::collections::HashMap::new()).unwrap();
+        let entry = parse_message_json(json, "test-session", &std::collections::HashMap::new()).unwrap();
         assert_eq!(entry.input_tokens, 65680);
         assert_eq!(entry.output_tokens, 4091);
         assert_eq!(entry.cache_read_tokens, 1000);
@@ -364,7 +362,7 @@ mod tests {
             "tokens": {"input": 100, "output": 50}
         }"#;
 
-        let entry = parse_message_json(json, &std::collections::HashMap::new()).unwrap();
+        let entry = parse_message_json(json, "test-session", &std::collections::HashMap::new()).unwrap();
         assert_eq!(entry.input_tokens, 100);
         assert_eq!(entry.output_tokens, 50);
         assert_eq!(entry.cache_read_tokens, 0);
@@ -379,7 +377,7 @@ mod tests {
             "tokens": {"input": 0, "output": 0}
         }"#;
 
-        assert!(parse_message_json(json, &std::collections::HashMap::new()).is_none());
+        assert!(parse_message_json(json, "test-session", &std::collections::HashMap::new()).is_none());
     }
 
     #[test]
@@ -396,7 +394,7 @@ mod tests {
             }
         }"#;
 
-        let entry = parse_message_json(json, &std::collections::HashMap::new()).unwrap();
+        let entry = parse_message_json(json, "test-session", &std::collections::HashMap::new()).unwrap();
         assert_eq!(entry.input_tokens, 1000);
         assert_eq!(entry.output_tokens, 500);
         assert_eq!(entry.cache_read_tokens, 2000);
@@ -407,7 +405,7 @@ mod tests {
     #[test]
     fn test_parse_message_json_skip_no_tokens() {
         let json = r#"{"role": "assistant"}"#;
-        assert!(parse_message_json(json, &std::collections::HashMap::new()).is_none());
+        assert!(parse_message_json(json, "test-session", &std::collections::HashMap::new()).is_none());
     }
 
     #[test]

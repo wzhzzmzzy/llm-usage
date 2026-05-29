@@ -1,8 +1,11 @@
 pub mod claude;
 pub mod codex;
+pub mod gemini;
 pub mod opencode;
 
 use std::path::PathBuf;
+
+use chrono::{DateTime, Utc};
 
 use crate::core::model::Source;
 
@@ -51,6 +54,9 @@ pub trait UsageAdapter: Send + Sync {
 
     /// Aggregate entries into session report
     fn aggregate_session(&self, entries: &[UsageEntry]) -> Vec<SessionAggregate>;
+
+    /// Aggregate entries into block report (billing windows)
+    fn aggregate_blocks(&self, entries: &[UsageEntry], block_duration_hours: i64) -> Vec<BlockAggregate>;
 }
 
 /// Aggregated daily usage
@@ -97,6 +103,27 @@ pub struct SessionAggregate {
     pub model_breakdown: Vec<ModelBreakdown>,
 }
 
+/// Aggregated block usage (5-hour billing windows)
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockAggregate {
+    pub block_id: String,
+    pub start_time: String,
+    pub end_time: String,
+    pub actual_end_time: Option<String>,
+    pub is_active: bool,
+    pub total_tokens: u64,
+    pub input_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub output_tokens: u64,
+    pub request_count: u64,
+    pub models_used: Vec<String>,
+    pub model_breakdown: Vec<ModelBreakdown>,
+}
+
+/// Default block duration in hours (Claude's billing window)
+pub const DEFAULT_BLOCK_DURATION_HOURS: i64 = 5;
+
 /// Helper to build model breakdown from entries
 pub fn build_model_breakdown(entries: &[UsageEntry]) -> Vec<ModelBreakdown> {
     use std::collections::HashMap;
@@ -124,4 +151,122 @@ pub fn build_model_breakdown(entries: &[UsageEntry]) -> Vec<ModelBreakdown> {
     let mut result: Vec<ModelBreakdown> = map.into_values().collect();
     result.sort_by(|a, b| b.total_tokens.cmp(&a.total_tokens));
     result
+}
+
+/// Shared blocks aggregation logic - groups entries into time-based blocks
+pub fn aggregate_blocks_impl(entries: &[UsageEntry], block_duration_hours: i64) -> Vec<BlockAggregate> {
+    use chrono::{DateTime, Duration, Utc};
+
+    if entries.is_empty() {
+        return Vec::new();
+    }
+
+    let block_duration_ms = Duration::hours(block_duration_hours);
+    let now = Utc::now();
+
+    let mut sorted_entries: Vec<&UsageEntry> = entries.iter().collect();
+    sorted_entries.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+
+    let mut blocks: Vec<BlockAggregate> = Vec::new();
+    let mut current_block_start: Option<DateTime<Utc>> = None;
+    let mut current_block_entries: Vec<&UsageEntry> = Vec::new();
+
+    for entry in &sorted_entries {
+        let entry_time = DateTime::parse_from_rfc3339(&entry.timestamp)
+            .ok()
+            .map(|dt| dt.with_timezone(&Utc));
+
+        let Some(entry_time) = entry_time else {
+            continue;
+        };
+
+        if let Some(block_start) = current_block_start {
+            let time_since_start = entry_time - block_start;
+            let last_entry_time = current_block_entries.last()
+                .and_then(|e| DateTime::parse_from_rfc3339(&e.timestamp).ok())
+                .map(|dt| dt.with_timezone(&Utc));
+
+            let should_start_new_block = time_since_start > block_duration_ms
+                || last_entry_time.is_some_and(|last| entry_time - last > block_duration_ms);
+
+            if should_start_new_block {
+                if !current_block_entries.is_empty() {
+                    blocks.push(create_block(
+                        block_start,
+                        &current_block_entries,
+                        now,
+                        block_duration_ms,
+                    ));
+                }
+                current_block_start = Some(entry_time);
+                current_block_entries = vec![entry];
+            } else {
+                current_block_entries.push(entry);
+            }
+        } else {
+            current_block_start = Some(entry_time);
+            current_block_entries = vec![entry];
+        }
+    }
+
+    if let Some(block_start) = current_block_start {
+        if !current_block_entries.is_empty() {
+            blocks.push(create_block(
+                block_start,
+                &current_block_entries,
+                now,
+                block_duration_ms,
+            ));
+        }
+    }
+
+    blocks
+}
+
+fn create_block(
+    start_time: DateTime<Utc>,
+    entries: &[&UsageEntry],
+    now: DateTime<Utc>,
+    block_duration: chrono::Duration,
+) -> BlockAggregate {
+    let end_time = start_time + block_duration;
+    let actual_end_time = entries.last()
+        .and_then(|e| DateTime::parse_from_rfc3339(&e.timestamp).ok())
+        .map(|dt| dt.with_timezone(&Utc));
+
+    let is_active = actual_end_time
+        .map(|actual| now - actual < block_duration && now < end_time)
+        .unwrap_or(false);
+
+    let total_tokens: u64 = entries.iter().map(|e| e.total_tokens).sum();
+    let input_tokens: u64 = entries.iter().map(|e| e.input_tokens).sum();
+    let cache_read_tokens: u64 = entries.iter().map(|e| e.cache_read_tokens).sum();
+    let output_tokens: u64 = entries.iter().map(|e| e.output_tokens).sum();
+
+    let mut models_used: Vec<String> = entries
+        .iter()
+        .filter_map(|e| e.model.clone())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+    models_used.sort();
+
+    let model_breakdown = build_model_breakdown(
+        &entries.iter().map(|e| (*e).clone()).collect::<Vec<_>>(),
+    );
+
+    BlockAggregate {
+        block_id: start_time.to_rfc3339(),
+        start_time: start_time.to_rfc3339(),
+        end_time: end_time.to_rfc3339(),
+        actual_end_time: actual_end_time.map(|t| t.to_rfc3339()),
+        is_active,
+        total_tokens,
+        input_tokens,
+        cache_read_tokens,
+        output_tokens,
+        request_count: entries.len() as u64,
+        models_used,
+        model_breakdown,
+    }
 }

@@ -2,7 +2,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::{build_model_breakdown, DailyAggregate, MonthlyAggregate, SessionAggregate, UsageAdapter, UsageEntry};
+use super::{aggregate_blocks_impl, build_model_breakdown, BlockAggregate, DailyAggregate, MonthlyAggregate, SessionAggregate, UsageAdapter, UsageEntry};
 use crate::core::model::Source;
 
 /// Claude Code usage adapter
@@ -232,6 +232,10 @@ impl UsageAdapter for ClaudeAdapter {
         });
         result
     }
+
+    fn aggregate_blocks(&self, entries: &[UsageEntry], block_duration_hours: i64) -> Vec<BlockAggregate> {
+        aggregate_blocks_impl(entries, block_duration_hours)
+    }
 }
 
 /// Expand ~ to home directory
@@ -274,10 +278,22 @@ fn collect_files_with_extension(dir: &Path, extension: &str, files: &mut Vec<Pat
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_session_id() {
+        let path = PathBuf::from("/Users/amber/.claude/projects/-Users-amber-Projects-ralph-llm-usage/abc123.jsonl");
+        assert_eq!(extract_session_id(&path), "abc123");
+    }
+}
+
 /// Parse a Claude JSONL file into usage entries
 fn parse_claude_jsonl(path: &Path) -> Result<Vec<UsageEntry>, Box<dyn std::error::Error>> {
     let content = fs::read_to_string(path)?;
     let mut entries = Vec::new();
+    let mut project_path: Option<String> = None;
 
     for line in content.lines() {
         if line.trim().is_empty() {
@@ -287,6 +303,13 @@ fn parse_claude_jsonl(path: &Path) -> Result<Vec<UsageEntry>, Box<dyn std::error
         let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
+
+        // Extract cwd from the first line that has it
+        if project_path.is_none() {
+            if let Some(cwd) = value.get("cwd").and_then(|c| c.as_str()) {
+                project_path = Some(cwd.to_string());
+            }
+        }
 
         // Skip entries without usage data
         let Some(usage) = value.get("message").and_then(|m| m.get("usage")) else {
@@ -339,7 +362,7 @@ fn parse_claude_jsonl(path: &Path) -> Result<Vec<UsageEntry>, Box<dyn std::error
                 cache_creation_tokens,
                 cache_read_tokens,
                 total_tokens,
-                project_path: None,
+                project_path: project_path.clone(),
             });
         }
     }

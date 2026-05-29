@@ -2,7 +2,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::{build_model_breakdown, DailyAggregate, MonthlyAggregate, SessionAggregate, UsageAdapter, UsageEntry};
+use super::{aggregate_blocks_impl, build_model_breakdown, BlockAggregate, DailyAggregate, MonthlyAggregate, SessionAggregate, UsageAdapter, UsageEntry};
 use crate::core::model::Source;
 
 /// Codex usage adapter
@@ -225,6 +225,10 @@ impl UsageAdapter for CodexAdapter {
         });
         result
     }
+
+    fn aggregate_blocks(&self, entries: &[UsageEntry], block_duration_hours: i64) -> Vec<BlockAggregate> {
+        aggregate_blocks_impl(entries, block_duration_hours)
+    }
 }
 
 /// Collect all .jsonl files recursively
@@ -257,6 +261,7 @@ fn parse_codex_jsonl(path: &Path) -> Result<Vec<UsageEntry>, Box<dyn std::error:
     let content = fs::read_to_string(path)?;
     let mut entries = Vec::new();
     let mut current_model: Option<String> = None;
+    let mut current_cwd: Option<String> = None;
 
     for line in content.lines() {
         if line.trim().is_empty() {
@@ -267,14 +272,20 @@ fn parse_codex_jsonl(path: &Path) -> Result<Vec<UsageEntry>, Box<dyn std::error:
             continue;
         };
 
-        // Check for turn_context to get model
+        // Check for turn_context to get model and cwd
         if value.get("type").and_then(|t| t.as_str()) == Some("turn_context") {
-            if let Some(model) = value
-                .get("payload")
+            let payload = value.get("payload");
+            if let Some(model) = payload
                 .and_then(|p| p.get("model"))
                 .and_then(|m| m.as_str())
             {
                 current_model = Some(model.to_string());
+            }
+            if let Some(cwd) = payload
+                .and_then(|p| p.get("cwd"))
+                .and_then(|c| c.as_str())
+            {
+                current_cwd = Some(cwd.to_string());
             }
             continue;
         }
@@ -349,7 +360,7 @@ fn parse_codex_jsonl(path: &Path) -> Result<Vec<UsageEntry>, Box<dyn std::error:
                 cache_creation_tokens: 0,
                 cache_read_tokens: cached_input_tokens,
                 total_tokens,
-                project_path: None,
+                project_path: current_cwd.clone(),
             });
         }
     }

@@ -11,6 +11,7 @@ pub enum Source {
     All,
     Claude,
     Codex,
+    Gemini,
     Opencode,
 }
 
@@ -20,12 +21,13 @@ impl Source {
             Source::All => "all",
             Source::Claude => "claude",
             Source::Codex => "codex",
+            Source::Gemini => "gemini",
             Source::Opencode => "opencode",
         }
     }
 
     pub fn all_variants() -> &'static [Source] {
-        &[Source::All, Source::Claude, Source::Codex, Source::Opencode]
+        &[Source::All, Source::Claude, Source::Codex, Source::Gemini, Source::Opencode]
     }
 }
 

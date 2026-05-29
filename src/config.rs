@@ -7,6 +7,12 @@ use crate::core::error::ConfigError;
 pub struct AppConfig {
     pub ccusage: CcUsageConfig,
     pub server: ServerConfig,
+    #[serde(default = "default_block_duration_hours")]
+    pub block_duration_hours: i64,
+}
+
+fn default_block_duration_hours() -> i64 {
+    5
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,6 +42,7 @@ impl Default for AppConfig {
                 host: "127.0.0.1".to_string(),
                 port: 3766,
             },
+            block_duration_hours: 5,
         }
     }
 }

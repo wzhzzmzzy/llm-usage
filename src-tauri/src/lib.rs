@@ -140,7 +140,7 @@ fn health() -> Result<HealthResponse, String> {
 
 #[tauri::command]
 fn refresh() -> Result<RefreshResponse, String> {
-    let sources = ["all", "claude", "codex", "opencode"];
+    let sources = ["all", "claude", "codex", "gemini", "opencode"];
     let reports = ["daily", "monthly", "session", "blocks"];
 
     let mut daily = serde_json::Map::new();

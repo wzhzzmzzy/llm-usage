@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import type { DailyReport } from '../api/types';
 
 interface ContributionCalendarProps {
@@ -43,6 +43,8 @@ function getIntensity(tokens: number): number {
 
 export function ContributionCalendar({ data, onDayClick }: ContributionCalendarProps) {
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
+  const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties>({});
 
   const { grid } = useMemo(() => {
     const today = new Date();
@@ -103,15 +105,51 @@ export function ContributionCalendar({ data, onDayClick }: ContributionCalendarP
     return result;
   }, [grid]);
 
-  const handleMouseEnter = useCallback((day: DayData, weekIndex: number, dayIndex: number) => {
-    const x = weekIndex * (CELL_SIZE + CELL_GAP) + 40 + CELL_SIZE / 2;
-    const y = dayIndex * (CELL_SIZE + CELL_GAP) + 18;
+  const handleMouseEnter = useCallback((day: DayData, e: React.MouseEvent) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top;
     setTooltip({ day, x, y });
   }, []);
 
   const handleMouseLeave = useCallback(() => {
     setTooltip(null);
   }, []);
+
+  useEffect(() => {
+    if (!tooltip || !tooltipRef.current) return;
+
+    const el = tooltipRef.current;
+    const rect = el.getBoundingClientRect();
+    const margin = 8;
+
+    let x = tooltip.x;
+    let y = tooltip.y - 8;
+    let translateX = '-50%';
+    let translateY = '-100%';
+
+    // Left edge
+    if (rect.left < margin) {
+      x = margin;
+      translateX = '0';
+    }
+    // Right edge
+    if (rect.right > window.innerWidth - margin) {
+      x = window.innerWidth - margin;
+      translateX = '-100%';
+    }
+    // Top edge
+    if (rect.top < margin) {
+      y = tooltip.y + 24;
+      translateY = '0';
+    }
+
+    setTooltipStyle({
+      left: x,
+      top: y,
+      transform: `translate(${translateX}, ${translateY})`,
+    });
+  }, [tooltip]);
 
   const width = grid.length * (CELL_SIZE + CELL_GAP) + 40;
   const height = 7 * (CELL_SIZE + CELL_GAP) + 30;
@@ -158,7 +196,7 @@ export function ContributionCalendar({ data, onDayClick }: ContributionCalendarP
                   fill={COLORS[intensity]}
                   className="cursor-pointer hover:stroke-2 hover:stroke-foreground"
                   onClick={() => onDayClick?.(day.date)}
-                  onMouseEnter={() => handleMouseEnter(day, weekIndex, dayIndex)}
+                  onMouseEnter={(e) => handleMouseEnter(day, e)}
                   onMouseLeave={handleMouseLeave}
                 />
               );
@@ -169,12 +207,9 @@ export function ContributionCalendar({ data, onDayClick }: ContributionCalendarP
 
       {tooltip && (
         <div
-          className="absolute z-50 bg-white border rounded-md shadow-lg p-3 text-sm pointer-events-none"
-          style={{
-            left: tooltip.x,
-            top: tooltip.y - 8,
-            transform: 'translate(-50%, -100%)',
-          }}
+          ref={tooltipRef}
+          className="fixed z-50 bg-white border rounded-md shadow-lg p-3 text-sm pointer-events-none"
+          style={tooltipStyle}
         >
           <div className="font-medium mb-1 text-gray-900">{tooltip.day.date}</div>
           <div className="space-y-0.5 text-gray-600">

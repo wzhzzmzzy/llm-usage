@@ -29,6 +29,16 @@ function CustomTooltip({ active, payload, label }: any) {
   );
 }
 
+function formatBlockLabel(isoString: string): string {
+  const date = new Date(isoString);
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 export function UsageChart({ data, type }: UsageChartProps) {
   if (data.length === 0) {
     return (
@@ -67,10 +77,10 @@ export function UsageChart({ data, type }: UsageChartProps) {
       break;
     case 'blocks':
       chartData = (data as BlockRow[]).slice().reverse().map((row) => ({
-        name: row.blockId.slice(0, 8),
-        input: 0,
-        cache: 0,
-        output: 0,
+        name: formatBlockLabel(row.startTime),
+        input: row.inputTokens ?? 0,
+        cache: row.cacheReadTokens ?? 0,
+        output: row.outputTokens ?? 0,
       }));
       break;
   }
