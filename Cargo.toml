@@ -4,6 +4,14 @@ version = "0.1.0"
 edition = "2021"
 description = "Local-first personal LLM usage dashboard"
 
+[lib]
+name = "llm_usage"
+path = "src/lib.rs"
+
+[[bin]]
+name = "llm-usage"
+path = "src/main.rs"
+
 [features]
 default = ["web"]
 web = ["rust-embed", "mime_guess"]

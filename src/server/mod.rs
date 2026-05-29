@@ -11,8 +11,8 @@ use tower_http::cors::CorsLayer;
 #[cfg(feature = "web")]
 mod embedded;
 
-use crate::core::model::{HealthResponse, Snapshot};
-use crate::core::refresh::{RefreshManager, RefreshStatus};
+use llm_usage::core::model::{HealthResponse, Snapshot};
+use llm_usage::core::refresh::{RefreshManager, RefreshStatus};
 
 #[derive(Clone)]
 pub struct AppState {

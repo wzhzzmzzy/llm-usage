@@ -1,34 +1,25 @@
-use serde::{Deserialize, Serialize};
-use std::process::Command;
+use llm_usage::core::adapter::*;
+use llm_usage::core::adapter::claude::ClaudeAdapter;
+use llm_usage::core::adapter::codex::CodexAdapter;
+use llm_usage::core::adapter::gemini::GeminiAdapter;
+use llm_usage::core::adapter::opencode::OpenCodeAdapter;
+use llm_usage::core::model::*;
+use llm_usage::core::normalize::*;
+use serde::Serialize;
+use std::sync::Mutex;
 
-#[derive(Serialize, Deserialize)]
-struct HealthResponse {
-    status: String,
-    runner: RunnerStatus,
-    ccusage: CcUsageStatus,
-    config_path: String,
+struct AppState {
+    entries: Mutex<Option<CachedEntries>>,
 }
 
-#[derive(Serialize, Deserialize)]
-struct RunnerStatus {
-    found: bool,
-    path: Option<String>,
-    version: Option<String>,
+struct CachedEntries {
+    timestamp: chrono::DateTime<chrono::Utc>,
+    all_entries: Vec<UsageEntry>,
+    by_source: Vec<(Source, Vec<UsageEntry>)>,
 }
 
-#[derive(Serialize, Deserialize)]
-struct CcUsageStatus {
-    available: bool,
-    version: Option<String>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct RefreshResponse {
-    status: String,
-    snapshot: serde_json::Value,
-}
-
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct Snapshot {
     status: String,
     last_refresh: Option<String>,
@@ -42,241 +33,324 @@ struct Snapshot {
     timezone: String,
 }
 
-fn get_runner() -> String {
-    std::env::var("CCUSAGE_RUNNER").unwrap_or_default()
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RefreshStatus {
+    is_refreshing: bool,
+    last_refresh: Option<String>,
+    last_success: Option<String>,
+    last_error: Option<String>,
+    snapshot_status: String,
 }
 
-fn get_package_spec() -> String {
-    std::env::var("CCUSAGE_PACKAGE").unwrap_or_else(|_| "ccusage".to_string())
-}
+fn load_all_entries() -> Vec<(Source, Vec<UsageEntry>)> {
+    let adapters: Vec<Box<dyn UsageAdapter>> = vec![
+        Box::new(ClaudeAdapter::new()),
+        Box::new(CodexAdapter::new()),
+        Box::new(GeminiAdapter::new()),
+        Box::new(OpenCodeAdapter::new()),
+    ];
 
-fn run_ccusage(args: &[&str]) -> Result<std::process::Output, String> {
-    let runner = get_runner();
-    let package = get_package_spec();
-    
-    let mut full_args: Vec<&str> = args.to_vec();
-    full_args.push("--offline");
-    
-    if runner.is_empty() {
-        Command::new(&package)
-            .args(&full_args)
-            .output()
-            .map_err(|e| format!("Failed to run {}: {}", package, e))
-    } else {
-        let mut cmd_args = vec![package.as_str()];
-        cmd_args.extend_from_slice(&full_args);
-        Command::new(&runner)
-            .args(&cmd_args)
-            .output()
-            .map_err(|e| format!("Failed to run {} {}: {}", runner, package, e))
-    }
-}
-
-#[tauri::command]
-fn health() -> Result<HealthResponse, String> {
-    let runner = get_runner();
-    let package = get_package_spec();
-
-    let (runner_found, runner_path, runner_version) = if runner.is_empty() {
-        let output = Command::new(&package)
-            .arg("--version")
-            .output();
-        match output {
-            Ok(o) if o.status.success() => {
-                let version = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                (true, Some(package.clone()), Some(version))
+    adapters
+        .into_iter()
+        .filter_map(|adapter| {
+            let source = adapter.source();
+            let paths = adapter.find_data_paths().ok()?;
+            let entries = adapter.load_entries(&paths).ok()?;
+            if entries.is_empty() {
+                None
+            } else {
+                Some((source, entries))
             }
-            _ => (false, None, None),
-        }
-    } else {
-        let output = Command::new(&runner)
-            .arg("--version")
-            .output();
-        match output {
-            Ok(o) if o.status.success() => {
-                let version = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                (true, Some(runner.clone()), Some(version))
-            }
-            _ => (false, None, None),
-        }
-    };
-
-    let ccusage_output = run_ccusage(&["--version"]);
-    let (ccusage_available, ccusage_version) = match ccusage_output {
-        Ok(output) if output.status.success() => {
-            let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            (true, Some(version))
-        }
-        _ => (false, None),
-    };
-
-    let status = if runner_found && ccusage_available {
-        "healthy"
-    } else if ccusage_available {
-        "healthy"
-    } else {
-        "unhealthy"
-    };
-
-    let config_path = dirs::config_dir()
-        .map(|p| p.join("llm-usage-dashboard").join("config.toml"))
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|| "unknown".to_string());
-
-    Ok(HealthResponse {
-        status: status.to_string(),
-        runner: RunnerStatus {
-            found: runner_found || ccusage_available,
-            path: runner_path,
-            version: runner_version,
-        },
-        ccusage: CcUsageStatus {
-            available: ccusage_available,
-            version: ccusage_version,
-        },
-        config_path,
-    })
+        })
+        .collect()
 }
 
-#[tauri::command]
-fn refresh() -> Result<RefreshResponse, String> {
-    let sources = ["all", "claude", "codex", "gemini", "opencode"];
-    let reports = ["daily", "monthly", "session", "blocks"];
-
+fn build_snapshot(cached: &CachedEntries) -> Snapshot {
+    let mut cells = serde_json::Map::new();
     let mut daily = serde_json::Map::new();
     let mut monthly = serde_json::Map::new();
     let mut session = serde_json::Map::new();
     let mut blocks = serde_json::Map::new();
-    let mut cells = serde_json::Map::new();
-    let mut success_count = 0;
-    let mut error_count = 0;
 
-    for source in &sources {
-        for report in &reports {
-            let mut args = vec![];
-            if *source != "all" {
-                args.push(*source);
-            }
-            args.push(*report);
-            args.push("--json");
+    let adapters: Vec<Box<dyn UsageAdapter>> = vec![
+        Box::new(ClaudeAdapter::new()),
+        Box::new(CodexAdapter::new()),
+        Box::new(GeminiAdapter::new()),
+        Box::new(OpenCodeAdapter::new()),
+    ];
 
-            let key = format!("{}_{}", source, report);
+    for (source, entries) in &cached.by_source {
+        let adapter = adapters.iter().find(|a| a.source() == *source).unwrap();
+        let source_str = source.as_str();
 
-            match run_ccusage(&args) {
-                Ok(output) if output.status.success() => {
-                    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                    match serde_json::from_str::<serde_json::Value>(&stdout) {
-                        Ok(value) => {
-                            match *report {
-                                "daily" => daily.insert(key.clone(), value),
-                                "monthly" => monthly.insert(key.clone(), value),
-                                "session" => session.insert(key.clone(), value),
-                                "blocks" => blocks.insert(key.clone(), value),
-                                _ => None,
-                            };
-                            cells.insert(
-                                key,
-                                serde_json::json!({
-                                    "cell": { "source": source, "report": report },
-                                    "status": "success",
-                                    "durationMs": 0
-                                }),
-                            );
-                            success_count += 1;
-                        }
-                        Err(e) => {
-                            cells.insert(
-                                key,
-                                serde_json::json!({
-                                    "cell": { "source": source, "report": report },
-                                    "status": "error",
-                                    "error": format!("Invalid JSON: {}", e),
-                                    "durationMs": 0
-                                }),
-                            );
-                            error_count += 1;
-                        }
-                    }
-                }
-                Ok(output) => {
-                    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                    cells.insert(
-                        key,
-                        serde_json::json!({
-                            "cell": { "source": source, "report": report },
-                            "status": "error",
-                            "error": format!("Command failed: {}", stderr),
-                            "exitCode": output.status.code(),
-                            "durationMs": 0
-                        }),
-                    );
-                    error_count += 1;
-                }
-                Err(e) => {
-                    cells.insert(
-                        key,
-                        serde_json::json!({
-                            "cell": { "source": source, "report": report },
-                            "status": "error",
-                            "error": e,
-                            "durationMs": 0
-                        }),
-                    );
-                    error_count += 1;
-                }
-            }
+        let daily_agg = adapter.aggregate_daily(entries);
+        let monthly_agg = adapter.aggregate_monthly(entries);
+        let session_agg = adapter.aggregate_session(entries);
+        let blocks_agg = adapter.aggregate_blocks(entries, 5);
+
+        let daily_raw: Vec<RawDailyAggregate> = daily_agg.iter().map(|a| RawDailyAggregate {
+            date: a.date.clone(),
+            total_tokens: a.total_tokens,
+            input_tokens: a.input_tokens,
+            cache_read_tokens: a.cache_read_tokens,
+            output_tokens: a.output_tokens,
+            request_count: Some(a.request_count),
+            models_used: Some(a.models_used.clone()),
+            model_breakdown: Some(a.model_breakdown.clone()),
+        }).collect();
+
+        let monthly_raw: Vec<RawMonthlyAggregate> = monthly_agg.iter().map(|a| RawMonthlyAggregate {
+            month: a.month.clone(),
+            total_tokens: a.total_tokens,
+            input_tokens: a.input_tokens,
+            cache_read_tokens: a.cache_read_tokens,
+            output_tokens: a.output_tokens,
+            request_count: Some(a.request_count),
+            models_used: Some(a.models_used.clone()),
+            model_breakdown: Some(a.model_breakdown.clone()),
+        }).collect();
+
+        let session_raw: Vec<RawSessionAggregate> = session_agg.iter().map(|a| RawSessionAggregate {
+            session_id: a.session_id.clone(),
+            project_path: a.project_path.clone(),
+            total_tokens: a.total_tokens,
+            input_tokens: a.input_tokens,
+            cache_read_tokens: a.cache_read_tokens,
+            output_tokens: a.output_tokens,
+            request_count: Some(a.request_count),
+            last_activity: a.last_activity.clone(),
+            models_used: Some(a.models_used.clone()),
+            model_breakdown: Some(a.model_breakdown.clone()),
+        }).collect();
+
+        let blocks_raw: Vec<RawBlockAggregate> = blocks_agg.iter().map(|a| RawBlockAggregate {
+            block_id: a.block_id.clone(),
+            start_time: a.start_time.clone(),
+            end_time: a.end_time.clone(),
+            actual_end_time: a.actual_end_time.clone(),
+            is_active: a.is_active,
+            total_tokens: a.total_tokens,
+            input_tokens: a.input_tokens,
+            cache_read_tokens: a.cache_read_tokens,
+            output_tokens: a.output_tokens,
+            request_count: Some(a.request_count),
+            models_used: Some(a.models_used.clone()),
+            model_breakdown: Some(a.model_breakdown.clone()),
+        }).collect();
+
+        if let Ok(report) = Normalizer::normalize_daily(&daily_raw) {
+            daily.insert(format!("{}_daily", source_str), serde_json::to_value(report).unwrap());
+        }
+        if let Ok(report) = Normalizer::normalize_monthly(&monthly_raw) {
+            monthly.insert(format!("{}_monthly", source_str), serde_json::to_value(report).unwrap());
+        }
+        if let Ok(report) = Normalizer::normalize_session(&session_raw) {
+            session.insert(format!("{}_session", source_str), serde_json::to_value(report).unwrap());
+        }
+        if let Ok(report) = Normalizer::normalize_blocks(&blocks_raw) {
+            blocks.insert(format!("{}_blocks", source_str), serde_json::to_value(report).unwrap());
+        }
+
+        for report in ReportType::all_variants() {
+            let key = format!("{}_{}", source_str, report.as_str());
+            cells.insert(
+                key,
+                serde_json::json!({
+                    "cell": { "source": source_str, "report": report.as_str() },
+                    "status": "success",
+                    "durationMs": 0
+                }),
+            );
         }
     }
 
-    let status = if success_count > 0 && error_count == 0 {
-        "success"
-    } else if success_count > 0 {
-        "partial"
-    } else {
-        "error"
-    };
+    let all_adapter = adapters.into_iter().next().unwrap();
+    let all_daily = all_adapter.aggregate_daily(&cached.all_entries);
+    let all_monthly = all_adapter.aggregate_monthly(&cached.all_entries);
+    let all_session = all_adapter.aggregate_session(&cached.all_entries);
+    let all_blocks = all_adapter.aggregate_blocks(&cached.all_entries, 5);
 
-    let now = chrono::Utc::now().to_rfc3339();
+    let all_daily_raw: Vec<RawDailyAggregate> = all_daily.iter().map(|a| RawDailyAggregate {
+        date: a.date.clone(),
+        total_tokens: a.total_tokens,
+        input_tokens: a.input_tokens,
+        cache_read_tokens: a.cache_read_tokens,
+        output_tokens: a.output_tokens,
+        request_count: Some(a.request_count),
+        models_used: Some(a.models_used.clone()),
+        model_breakdown: Some(a.model_breakdown.clone()),
+    }).collect();
 
-    let snapshot = Snapshot {
-        status: status.to_string(),
-        last_refresh: Some(now.clone()),
-        last_success: if success_count > 0 { Some(now) } else { None },
-        last_error: if error_count > 0 { Some(chrono::Utc::now().to_rfc3339()) } else { None },
+    let all_monthly_raw: Vec<RawMonthlyAggregate> = all_monthly.iter().map(|a| RawMonthlyAggregate {
+        month: a.month.clone(),
+        total_tokens: a.total_tokens,
+        input_tokens: a.input_tokens,
+        cache_read_tokens: a.cache_read_tokens,
+        output_tokens: a.output_tokens,
+        request_count: Some(a.request_count),
+        models_used: Some(a.models_used.clone()),
+        model_breakdown: Some(a.model_breakdown.clone()),
+    }).collect();
+
+    let all_session_raw: Vec<RawSessionAggregate> = all_session.iter().map(|a| RawSessionAggregate {
+        session_id: a.session_id.clone(),
+        project_path: a.project_path.clone(),
+        total_tokens: a.total_tokens,
+        input_tokens: a.input_tokens,
+        cache_read_tokens: a.cache_read_tokens,
+        output_tokens: a.output_tokens,
+        request_count: Some(a.request_count),
+        last_activity: a.last_activity.clone(),
+        models_used: Some(a.models_used.clone()),
+        model_breakdown: Some(a.model_breakdown.clone()),
+    }).collect();
+
+    let all_blocks_raw: Vec<RawBlockAggregate> = all_blocks.iter().map(|a| RawBlockAggregate {
+        block_id: a.block_id.clone(),
+        start_time: a.start_time.clone(),
+        end_time: a.end_time.clone(),
+        actual_end_time: a.actual_end_time.clone(),
+        is_active: a.is_active,
+        total_tokens: a.total_tokens,
+        input_tokens: a.input_tokens,
+        cache_read_tokens: a.cache_read_tokens,
+        output_tokens: a.output_tokens,
+        request_count: Some(a.request_count),
+        models_used: Some(a.models_used.clone()),
+        model_breakdown: Some(a.model_breakdown.clone()),
+    }).collect();
+
+    if let Ok(report) = Normalizer::normalize_daily(&all_daily_raw) {
+        daily.insert("all_daily".into(), serde_json::to_value(report).unwrap());
+    }
+    if let Ok(report) = Normalizer::normalize_monthly(&all_monthly_raw) {
+        monthly.insert("all_monthly".into(), serde_json::to_value(report).unwrap());
+    }
+    if let Ok(report) = Normalizer::normalize_session(&all_session_raw) {
+        session.insert("all_session".into(), serde_json::to_value(report).unwrap());
+    }
+    if let Ok(report) = Normalizer::normalize_blocks(&all_blocks_raw) {
+        blocks.insert("all_blocks".into(), serde_json::to_value(report).unwrap());
+    }
+
+    for report in ReportType::all_variants() {
+        cells.insert(
+            format!("all_{}", report.as_str()),
+            serde_json::json!({
+                "cell": { "source": "all", "report": report.as_str() },
+                "status": "success",
+                "durationMs": 0
+            }),
+        );
+    }
+
+    Snapshot {
+        status: "success".into(),
+        last_refresh: Some(cached.timestamp.to_rfc3339()),
+        last_success: Some(cached.timestamp.to_rfc3339()),
+        last_error: None,
         cells: serde_json::Value::Object(cells),
         daily: serde_json::Value::Object(daily),
         monthly: serde_json::Value::Object(monthly),
         session: serde_json::Value::Object(session),
         blocks: serde_json::Value::Object(blocks),
-        timezone: "UTC".to_string(),
+        timezone: "UTC".into(),
+    }
+}
+
+#[tauri::command]
+fn get_snapshot(state: tauri::State<'_, AppState>) -> Snapshot {
+    let cached = state.entries.lock().unwrap();
+    match &*cached {
+        Some(cached) => build_snapshot(cached),
+        None => Snapshot {
+            status: "nodata".into(),
+            last_refresh: None,
+            last_success: None,
+            last_error: None,
+            cells: serde_json::json!({}),
+            daily: serde_json::json!({}),
+            monthly: serde_json::json!({}),
+            session: serde_json::json!({}),
+            blocks: serde_json::json!({}),
+            timezone: "UTC".into(),
+        },
+    }
+}
+
+#[tauri::command]
+async fn refresh(state: tauri::State<'_, AppState>) -> Result<RefreshStatus, String> {
+    let entries = tauri::async_runtime::spawn_blocking(load_all_entries)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let timestamp = chrono::Utc::now();
+    let all_entries: Vec<UsageEntry> = entries.iter().flat_map(|(_, e)| e.clone()).collect();
+
+    let cached = CachedEntries {
+        timestamp,
+        all_entries,
+        by_source: entries,
     };
 
-    Ok(RefreshResponse {
-        status: status.to_string(),
-        snapshot: serde_json::to_value(&snapshot).map_err(|e| e.to_string())?,
+    let snapshot = build_snapshot(&cached);
+    let status = snapshot.status.clone();
+
+    *state.entries.lock().unwrap() = Some(cached);
+
+    Ok(RefreshStatus {
+        is_refreshing: false,
+        last_refresh: Some(timestamp.to_rfc3339()),
+        last_success: Some(timestamp.to_rfc3339()),
+        last_error: None,
+        snapshot_status: status,
     })
 }
 
 #[tauri::command]
-fn get_snapshot() -> Result<serde_json::Value, String> {
-    Ok(serde_json::json!({
-        "status": "nodata",
-        "lastRefresh": null,
-        "lastSuccess": null,
-        "lastError": null,
-        "cells": {},
-        "daily": {},
-        "monthly": {},
-        "session": {},
-        "blocks": {},
-        "timezone": "UTC"
-    }))
+fn refresh_status(state: tauri::State<'_, AppState>) -> RefreshStatus {
+    let cached = state.entries.lock().unwrap();
+    match &*cached {
+        Some(cached) => RefreshStatus {
+            is_refreshing: false,
+            last_refresh: Some(cached.timestamp.to_rfc3339()),
+            last_success: Some(cached.timestamp.to_rfc3339()),
+            last_error: None,
+            snapshot_status: "success".into(),
+        },
+        None => RefreshStatus {
+            is_refreshing: false,
+            last_refresh: None,
+            last_success: None,
+            last_error: None,
+            snapshot_status: "nodata".into(),
+        },
+    }
+}
+
+#[tauri::command]
+fn health() -> serde_json::Value {
+    serde_json::json!({
+        "status": "healthy",
+        "runner": { "found": true, "path": "native", "version": env!("CARGO_PKG_VERSION") },
+        "ccusage": { "available": true, "version": "native" },
+        "configPath": ""
+    })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![health, refresh, get_snapshot])
+        .manage(AppState {
+            entries: Mutex::new(None),
+        })
+        .invoke_handler(tauri::generate_handler![
+            health,
+            refresh,
+            refresh_status,
+            get_snapshot
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

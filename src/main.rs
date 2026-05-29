@@ -1,13 +1,12 @@
 mod cli;
-mod config;
-mod core;
 #[cfg(feature = "desktop")]
 mod desktop;
 mod server;
 
 use clap::Parser;
 use cli::{Cli, Commands};
-use config::AppConfig;
+use llm_usage::config::AppConfig;
+use llm_usage::core as llm_core;
 use std::sync::Arc;
 use tracing_subscriber::EnvFilter;
 
@@ -39,7 +38,7 @@ async fn main() -> anyhow::Result<()> {
                 );
             }
 
-            let refresh_manager = Arc::new(core::refresh::RefreshManager::new(config));
+            let refresh_manager = Arc::new(llm_core::refresh::RefreshManager::new(config));
             let state = server::AppState { refresh_manager };
 
             #[cfg(feature = "web")]
@@ -65,13 +64,13 @@ async fn main() -> anyhow::Result<()> {
         }
 
         Commands::Health => {
-            let refresh_manager = core::refresh::RefreshManager::new(config);
+            let refresh_manager = llm_core::refresh::RefreshManager::new(config);
             let health = refresh_manager.health_check().await;
             println!("{}", serde_json::to_string_pretty(&health)?);
         }
 
         Commands::Refresh => {
-            let refresh_manager = core::refresh::RefreshManager::new(config);
+            let refresh_manager = llm_core::refresh::RefreshManager::new(config);
             let response = refresh_manager.refresh().await?;
             println!("{}", serde_json::to_string_pretty(&response)?);
         }
