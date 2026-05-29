@@ -3,12 +3,9 @@ use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
 
 use crate::config::AppConfig;
-use crate::core::error::{ProviderError, RefreshError};
+use crate::core::error::RefreshError;
 use crate::core::model::*;
-use crate::core::normalize::Normalizer;
-use crate::core::planner::CommandPlanner;
-use crate::core::provider::{RawBlockRow, RawDailyRow, RawMonthlyRow, RawSessionRow, UsageProvider};
-use serde::Deserialize;
+use crate::core::provider::{NativeUsageProvider, ProviderHealth, RawBlockRow, RawDailyRow, RawMonthlyRow, RawSessionRow, UsageProvider};
 
 pub const MAX_CONCURRENT_COMMANDS: usize = 8;
 pub const COMMAND_TIMEOUT_SECS: u64 = 15;
@@ -21,10 +18,10 @@ pub struct RefreshManager {
 }
 
 impl RefreshManager {
-    pub fn new(config: AppConfig, provider: Arc<dyn UsageProvider>) -> Self {
+    pub fn new(config: AppConfig) -> Self {
         Self {
             config,
-            provider,
+            provider: Arc::new(NativeUsageProvider::new()),
             snapshot: Arc::new(Mutex::new(Snapshot::default())),
         }
     }
@@ -38,19 +35,16 @@ impl RefreshManager {
     }
 
     async fn execute_refresh(&self) -> Result<RefreshResponse, RefreshError> {
-        let planner = CommandPlanner::new(self.config.ccusage.clone());
-        let commands = planner.plan_all();
-
+        let cells = Cell::all_cells();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_COMMANDS));
         let mut handles = Vec::new();
 
-        for cmd in commands {
+        for cell in cells {
             let provider = self.provider.clone();
             let sem = semaphore.clone();
 
             handles.push(tokio::spawn(async move {
                 let _permit = sem.acquire().await.unwrap();
-                let cell = cmd.cell;
 
                 let result = timeout(
                     Duration::from_secs(COMMAND_TIMEOUT_SECS),
@@ -61,7 +55,10 @@ impl RefreshManager {
                 match result {
                     Ok(Ok(json)) => (cell, Ok(json)),
                     Ok(Err(e)) => (cell, Err(e)),
-                    Err(_) => (cell, Err(ProviderError::Timeout(COMMAND_TIMEOUT_SECS))),
+                    Err(_) => (cell, Err(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        format!("Timeout after {} seconds", COMMAND_TIMEOUT_SECS),
+                    )) as Box<dyn std::error::Error + Send + Sync>)),
                 }
             }));
         }
@@ -145,23 +142,23 @@ impl RefreshManager {
         };
         snapshot.cells.insert(key.clone(), cell_result);
 
-        #[derive(Deserialize)]
+        #[derive(serde::Deserialize)]
         struct DailyWrapper {
             daily: Vec<RawDailyRow>,
         }
 
-        #[derive(Deserialize)]
+        #[derive(serde::Deserialize)]
         struct MonthlyWrapper {
             monthly: Vec<RawMonthlyRow>,
         }
 
-        #[derive(Deserialize)]
+        #[derive(serde::Deserialize)]
         struct SessionWrapper {
             #[serde(alias = "sessions")]
             session: Vec<RawSessionRow>,
         }
 
-        #[derive(Deserialize)]
+        #[derive(serde::Deserialize)]
         struct BlocksWrapper {
             blocks: Vec<RawBlockRow>,
         }
@@ -169,28 +166,28 @@ impl RefreshManager {
         match cell.report {
             ReportType::Daily => {
                 let wrapper: DailyWrapper = serde_json::from_str(json)?;
-                let report = Normalizer::normalize_daily(&wrapper.daily)?;
+                let report = crate::core::normalize::Normalizer::normalize_daily(&wrapper.daily)?;
                 snapshot
                     .daily
                     .insert(Snapshot::cell_key(cell.source, cell.report), report);
             }
             ReportType::Monthly => {
                 let wrapper: MonthlyWrapper = serde_json::from_str(json)?;
-                let report = Normalizer::normalize_monthly(&wrapper.monthly)?;
+                let report = crate::core::normalize::Normalizer::normalize_monthly(&wrapper.monthly)?;
                 snapshot
                     .monthly
                     .insert(Snapshot::cell_key(cell.source, cell.report), report);
             }
             ReportType::Session => {
                 let wrapper: SessionWrapper = serde_json::from_str(json)?;
-                let report = Normalizer::normalize_session(&wrapper.session)?;
+                let report = crate::core::normalize::Normalizer::normalize_session(&wrapper.session)?;
                 snapshot
                     .session
                     .insert(Snapshot::cell_key(cell.source, cell.report), report);
             }
             ReportType::Blocks => {
                 let wrapper: BlocksWrapper = serde_json::from_str(json)?;
-                let report = Normalizer::normalize_blocks(&wrapper.blocks)?;
+                let report = crate::core::normalize::Normalizer::normalize_blocks(&wrapper.blocks)?;
                 snapshot
                     .blocks
                     .insert(Snapshot::cell_key(cell.source, cell.report), report);

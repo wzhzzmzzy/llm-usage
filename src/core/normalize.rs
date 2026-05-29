@@ -214,26 +214,18 @@ impl Normalizer {
         let total_tokens = row.total_tokens.unwrap_or(row.input_tokens + row.output_tokens);
         let cost = Decimal::from_f64_retain(row.total_cost).unwrap_or_default();
 
-        let last_activity_str = row
+        let last_activity = row
             .last_activity
             .as_ref()
-            .or_else(|| row.metadata.as_ref().and_then(|m| m.last_activity.as_ref()));
-
-        let last_activity = last_activity_str
             .and_then(|s| {
                 chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
                     .ok()
                     .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc())
             });
 
-        let project_path = row
-            .project_path
-            .clone()
-            .or_else(|| row.metadata.as_ref().and_then(|m| m.project_path.clone()));
-
         Ok(SessionRow {
-            session_id: row.period.clone(),
-            project_path,
+            session_id: row.session_id.clone(),
+            project_path: row.project_path.clone(),
             cost_usd: cost.to_string(),
             cost_usd_number: row.total_cost,
             cost_formatted: format!("${:.2}", row.total_cost),
@@ -246,9 +238,8 @@ impl Normalizer {
     }
 
     fn normalize_block_row(row: &RawBlockRow) -> Result<BlockRow, NormalizeError> {
-        let token_counts = row.token_counts.as_ref();
-        let input_tokens = token_counts.map(|t| t.input_tokens).unwrap_or(0);
-        let output_tokens = token_counts.map(|t| t.output_tokens).unwrap_or(0);
+        let input_tokens = row.input_tokens;
+        let output_tokens = row.output_tokens;
         let total_tokens = row.total_tokens.unwrap_or(input_tokens + output_tokens);
         let cost = row.cost_usd.unwrap_or(0.0);
         let cost_decimal = Decimal::from_f64_retain(cost).unwrap_or_default();
@@ -258,14 +249,13 @@ impl Normalizer {
             .unwrap_or_else(|_| chrono::Utc::now());
 
         let end_time = row
-            .actual_end_time
+            .end_time
             .as_ref()
-            .or(row.end_time.as_ref())
             .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
             .map(|dt| dt.with_timezone(&chrono::Utc));
 
         Ok(BlockRow {
-            block_id: row.id.clone(),
+            block_id: row.block_id.clone(),
             start_time,
             end_time,
             cost_usd: cost_decimal.to_string(),
@@ -275,7 +265,7 @@ impl Normalizer {
             input_tokens,
             output_tokens,
             is_active: row.is_active,
-            models_used: row.models.clone(),
+            models_used: row.models_used.clone(),
         })
     }
 }
@@ -294,8 +284,8 @@ mod tests {
             cache_read_tokens: Some(200),
             total_cost: 0.05,
             total_tokens: Some(1500),
+            request_count: None,
             models_used: Some(vec!["claude-3.5-sonnet".to_string()]),
-            model_breakdowns: None,
         }];
 
         let report = Normalizer::normalize_daily(&rows).unwrap();

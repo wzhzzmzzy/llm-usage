@@ -37,6 +37,9 @@ rust_decimal = { version = "1", features = ["serde-with-str"] }
 thiserror = "1"
 anyhow = "1"
 
+# HTTP client for pricing
+reqwest = { version = "0.12", features = ["json"] }
+
 # Async trait
 async-trait = "0.1"
 

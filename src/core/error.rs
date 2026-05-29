@@ -89,3 +89,18 @@ pub enum NormalizeError {
     #[error("Parse error: {0}")]
     ParseError(String),
 }
+
+#[derive(Error, Debug)]
+pub enum PricingError {
+    #[error("Cache not found")]
+    CacheNotFound,
+
+    #[error("Cache expired")]
+    CacheExpired,
+
+    #[error("IO error: {0}")]
+    IoError(String),
+
+    #[error("Fetch error: {0}")]
+    FetchError(String),
+}
