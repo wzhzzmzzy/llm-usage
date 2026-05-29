@@ -1,155 +1,193 @@
-import {
-  createColumnHelper,
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
 import type { DailyRow, MonthlyRow, SessionRow, BlockRow } from '../api/types';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 
 interface UsageTableProps {
   data: DailyRow[] | MonthlyRow[] | SessionRow[] | BlockRow[];
   type: 'daily' | 'monthly' | 'session' | 'blocks';
 }
 
-const dailyColumns = createColumnHelper<DailyRow>();
-const monthlyColumns = createColumnHelper<MonthlyRow>();
-const sessionColumns = createColumnHelper<SessionRow>();
-const blockColumns = createColumnHelper<BlockRow>();
+function fmt(n: number | undefined): string {
+  return (n ?? 0).toLocaleString();
+}
 
-const dailyColDefs = [
-  dailyColumns.accessor('date', { header: 'Date' }),
-  dailyColumns.accessor('costFormatted', { header: 'Cost' }),
-  dailyColumns.accessor('totalTokens', {
-    header: 'Tokens',
-    cell: info => (info.getValue() ?? 0).toLocaleString(),
-  }),
-  dailyColumns.accessor('inputTokens', {
-    header: 'Input',
-    cell: info => (info.getValue() ?? 0).toLocaleString(),
-  }),
-  dailyColumns.accessor('outputTokens', {
-    header: 'Output',
-    cell: info => (info.getValue() ?? 0).toLocaleString(),
-  }),
-];
+function DailyTable({ data }: { data: DailyRow[] }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Date</TableHead>
+          <TableHead className="text-right">Total</TableHead>
+          <TableHead className="text-right">Input</TableHead>
+          <TableHead className="text-right">Cache Hit</TableHead>
+          <TableHead className="text-right">Output</TableHead>
+          <TableHead>Models</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {data.length === 0 ? (
+          <TableRow>
+            <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+              No data available
+            </TableCell>
+          </TableRow>
+        ) : (
+          data.map((row) => (
+            <TableRow key={row.date}>
+              <TableCell className="font-medium">{row.date}</TableCell>
+              <TableCell className="text-right">{fmt(row.totalTokens)}</TableCell>
+              <TableCell className="text-right">{fmt(row.inputTokens)}</TableCell>
+              <TableCell className="text-right">{fmt(row.cacheReadTokens)}</TableCell>
+              <TableCell className="text-right">{fmt(row.outputTokens)}</TableCell>
+              <TableCell className="text-muted-foreground">
+                {row.modelsUsed?.join(', ') ?? '-'}
+              </TableCell>
+            </TableRow>
+          ))
+        )}
+      </TableBody>
+    </Table>
+  );
+}
 
-const monthlyColDefs = [
-  monthlyColumns.accessor('month', { header: 'Month' }),
-  monthlyColumns.accessor('costFormatted', { header: 'Cost' }),
-  monthlyColumns.accessor('totalTokens', {
-    header: 'Tokens',
-    cell: info => (info.getValue() ?? 0).toLocaleString(),
-  }),
-  monthlyColumns.accessor('inputTokens', {
-    header: 'Input',
-    cell: info => (info.getValue() ?? 0).toLocaleString(),
-  }),
-  monthlyColumns.accessor('outputTokens', {
-    header: 'Output',
-    cell: info => (info.getValue() ?? 0).toLocaleString(),
-  }),
-];
+function MonthlyTable({ data }: { data: MonthlyRow[] }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Month</TableHead>
+          <TableHead className="text-right">Total</TableHead>
+          <TableHead className="text-right">Input</TableHead>
+          <TableHead className="text-right">Cache Hit</TableHead>
+          <TableHead className="text-right">Output</TableHead>
+          <TableHead>Models</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {data.length === 0 ? (
+          <TableRow>
+            <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+              No data available
+            </TableCell>
+          </TableRow>
+        ) : (
+          data.map((row) => (
+            <TableRow key={row.month}>
+              <TableCell className="font-medium">{row.month}</TableCell>
+              <TableCell className="text-right">{fmt(row.totalTokens)}</TableCell>
+              <TableCell className="text-right">{fmt(row.inputTokens)}</TableCell>
+              <TableCell className="text-right">{fmt(row.cacheReadTokens)}</TableCell>
+              <TableCell className="text-right">{fmt(row.outputTokens)}</TableCell>
+              <TableCell className="text-muted-foreground">
+                {row.modelsUsed?.join(', ') ?? '-'}
+              </TableCell>
+            </TableRow>
+          ))
+        )}
+      </TableBody>
+    </Table>
+  );
+}
 
-const sessionColDefs = [
-  sessionColumns.accessor('sessionId', {
-    header: 'Session',
-    cell: info => (info.getValue() ?? '').slice(0, 8),
-  }),
-  sessionColumns.accessor('projectPath', {
-    header: 'Project',
-    cell: info => info.getValue()?.split('/').pop() ?? '-',
-  }),
-  sessionColumns.accessor('costFormatted', { header: 'Cost' }),
-  sessionColumns.accessor('totalTokens', {
-    header: 'Tokens',
-    cell: info => (info.getValue() ?? 0).toLocaleString(),
-  }),
-  sessionColumns.accessor('lastActivity', {
-    header: 'Last Active',
-    cell: info => {
-      const val = info.getValue();
-      return val ? new Date(val).toLocaleDateString() : '-';
-    },
-  }),
-];
+function SessionTable({ data }: { data: SessionRow[] }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Session</TableHead>
+          <TableHead>Project</TableHead>
+          <TableHead className="text-right">Total</TableHead>
+          <TableHead className="text-right">Input</TableHead>
+          <TableHead className="text-right">Cache Hit</TableHead>
+          <TableHead className="text-right">Output</TableHead>
+          <TableHead>Last Active</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {data.length === 0 ? (
+          <TableRow>
+            <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+              No data available
+            </TableCell>
+          </TableRow>
+        ) : (
+          data.map((row) => (
+            <TableRow key={row.sessionId}>
+              <TableCell className="font-mono text-xs">
+                {row.sessionId.slice(0, 8)}
+              </TableCell>
+              <TableCell className="text-muted-foreground">
+                {row.projectPath?.split('/').pop() ?? '-'}
+              </TableCell>
+              <TableCell className="text-right">{fmt(row.totalTokens)}</TableCell>
+              <TableCell className="text-right">{fmt(row.inputTokens)}</TableCell>
+              <TableCell className="text-right">{fmt(row.cacheReadTokens)}</TableCell>
+              <TableCell className="text-right">{fmt(row.outputTokens)}</TableCell>
+              <TableCell className="text-muted-foreground">
+                {row.lastActivity
+                  ? new Date(row.lastActivity).toLocaleDateString()
+                  : '-'}
+              </TableCell>
+            </TableRow>
+          ))
+        )}
+      </TableBody>
+    </Table>
+  );
+}
 
-const blockColDefs = [
-  blockColumns.accessor('blockId', {
-    header: 'Block',
-    cell: info => (info.getValue() ?? '').slice(0, 8),
-  }),
-  blockColumns.accessor('startTime', {
-    header: 'Start',
-    cell: info => {
-      const val = info.getValue();
-      return val ? new Date(val).toLocaleString() : '-';
-    },
-  }),
-  blockColumns.accessor('costFormatted', { header: 'Cost' }),
-  blockColumns.accessor('totalTokens', {
-    header: 'Tokens',
-    cell: info => (info.getValue() ?? 0).toLocaleString(),
-  }),
-  blockColumns.accessor('isActive', {
-    header: 'Active',
-    cell: info => (info.getValue() ? '✓' : ''),
-  }),
-];
+function BlockTable({ data }: { data: BlockRow[] }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Block</TableHead>
+          <TableHead>Start</TableHead>
+          <TableHead className="text-right">Total</TableHead>
+          <TableHead>Active</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {data.length === 0 ? (
+          <TableRow>
+            <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
+              No data available
+            </TableCell>
+          </TableRow>
+        ) : (
+          data.map((row) => (
+            <TableRow key={row.blockId}>
+              <TableCell className="font-mono text-xs">
+                {row.blockId.slice(0, 8)}
+              </TableCell>
+              <TableCell className="text-muted-foreground">
+                {new Date(row.startTime).toLocaleString()}
+              </TableCell>
+              <TableCell className="text-right">{fmt(row.totalTokens)}</TableCell>
+              <TableCell>{row.isActive ? 'Yes' : ''}</TableCell>
+            </TableRow>
+          ))
+        )}
+      </TableBody>
+    </Table>
+  );
+}
 
 export function UsageTable({ data, type }: UsageTableProps) {
-  const columns = type === 'daily' ? dailyColDefs
-    : type === 'monthly' ? monthlyColDefs
-    : type === 'session' ? sessionColDefs
-    : blockColDefs;
-
-  const table = useReactTable({
-    data: data as any[],
-    columns: columns as any,
-    getCoreRowModel: getCoreRowModel(),
-  });
-
-  return (
-    <div className="rounded-md border">
-      <table className="w-full caption-bottom text-sm">
-        <thead className="[&_tr]:border-b">
-          {table.getHeaderGroups().map(headerGroup => (
-            <tr key={headerGroup.id} className="border-b transition-colors hover:bg-muted/50">
-              {headerGroup.headers.map(header => (
-                <th
-                  key={header.id}
-                  className="h-12 px-4 text-left align-middle font-medium text-muted-foreground"
-                >
-                  {header.isPlaceholder
-                    ? null
-                    : flexRender(header.column.columnDef.header, header.getContext())}
-                </th>
-              ))}
-            </tr>
-          ))}
-        </thead>
-        <tbody className="[&_tr:last-child]:border-0">
-          {table.getRowModel().rows?.length ? (
-            table.getRowModel().rows.map(row => (
-              <tr
-                key={row.id}
-                className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
-              >
-                {row.getVisibleCells().map(cell => (
-                  <td key={cell.id} className="p-4 align-middle">
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
-            ))
-          ) : (
-            <tr>
-              <td colSpan={columns.length} className="h-24 text-center text-muted-foreground">
-                No data available
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
-  );
+  switch (type) {
+    case 'daily':
+      return <DailyTable data={data as DailyRow[]} />;
+    case 'monthly':
+      return <MonthlyTable data={data as MonthlyRow[]} />;
+    case 'session':
+      return <SessionTable data={data as SessionRow[]} />;
+    case 'blocks':
+      return <BlockTable data={data as BlockRow[]} />;
+  }
 }

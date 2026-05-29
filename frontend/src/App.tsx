@@ -3,6 +3,26 @@ import { HttpUsageApi } from './api/http-usage-api';
 import type { Snapshot, Source, ReportType, UsageApi, RefreshStatus } from './api/types';
 import { ContributionCalendar } from './components/contribution-calendar';
 import { UsageTable } from './components/usage-table';
+import { UsageChart } from './components/usage-chart';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import { cn } from '@/lib/utils';
+import { Check, ChevronsUpDown, RefreshCw, BarChart3, Table } from 'lucide-react';
 
 let tauriInvoke: ((cmd: string, args?: Record<string, unknown>) => Promise<any>) | null = null;
 
@@ -48,13 +68,98 @@ function createApi(): UsageApi {
 
 const api = createApi();
 
-const SOURCES: Source[] = ['all', 'claude', 'codex', 'opencode'];
-const TABS: { key: ReportType; label: string }[] = [
+const SOURCES: { value: Source; label: string }[] = [
+  { value: 'all', label: 'All Sources' },
+  { value: 'claude', label: 'Claude' },
+  { value: 'codex', label: 'Codex' },
+  { value: 'opencode', label: 'OpenCode' },
+];
+
+const REPORT_TABS: { key: ReportType; label: string }[] = [
   { key: 'daily', label: 'Daily' },
   { key: 'monthly', label: 'Monthly' },
   { key: 'session', label: 'Sessions' },
   { key: 'blocks', label: 'Blocks' },
 ];
+
+function formatNumber(n: number | undefined): string {
+  return (n ?? 0).toLocaleString();
+}
+
+function SourceCombobox({
+  value,
+  onValueChange,
+}: {
+  value: Source;
+  onValueChange: (v: Source) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-[180px] justify-between"
+        >
+          {SOURCES.find((s) => s.value === value)?.label ?? 'Select source'}
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[180px] p-0">
+        <Command>
+          <CommandInput placeholder="Search source..." />
+          <CommandList>
+            <CommandEmpty>No source found.</CommandEmpty>
+            <CommandGroup>
+              {SOURCES.map((s) => (
+                <CommandItem
+                  key={s.value}
+                  value={s.value}
+                  onSelect={(current) => {
+                    onValueChange(current as Source);
+                    setOpen(false);
+                  }}
+                >
+                  <Check
+                    className={cn(
+                      'mr-2 h-4 w-4',
+                      value === s.value ? 'opacity-100' : 'opacity-0'
+                    )}
+                  />
+                  {s.label}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function MetricCard({
+  title,
+  value,
+}: {
+  title: string;
+  value: number | undefined;
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium text-muted-foreground">
+          {title}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="text-2xl font-bold">{formatNumber(value)}</div>
+      </CardContent>
+    </Card>
+  );
+}
 
 function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
@@ -63,6 +168,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [source, setSource] = useState<Source>('all');
   const [tab, setTab] = useState<ReportType>('daily');
+  const [view, setView] = useState<'table' | 'chart'>('table');
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const hasRefreshed = useRef(false);
   const pollIntervalRef = useRef<number | null>(null);
@@ -132,43 +238,44 @@ function App() {
     };
   }, [loadSnapshot, handleRefresh]);
 
-  const dailyData = snapshot?.daily?.[source === 'all' ? 'all_daily' : `${source}_daily`];
-  const monthlyData = snapshot?.monthly?.[source === 'all' ? 'all_monthly' : `${source}_monthly`];
-  const sessionData = snapshot?.session?.[source === 'all' ? 'all_session' : `${source}_session`];
-  const blocksData = snapshot?.blocks?.[source === 'all' ? 'all_blocks' : `${source}_blocks`];
+  const sourceKey = source === 'all' ? 'all' : source;
+  const dailyData = snapshot?.daily?.[`${sourceKey}_daily`];
+  const monthlyData = snapshot?.monthly?.[`${sourceKey}_monthly`];
+  const sessionData = snapshot?.session?.[`${sourceKey}_session`];
+  const blocksData = snapshot?.blocks?.[`${sourceKey}_blocks`];
 
-  const tableData = tab === 'daily' ? dailyData?.days ?? []
+  const tableData =
+    tab === 'daily' ? dailyData?.days ?? []
     : tab === 'monthly' ? monthlyData?.months ?? []
     : tab === 'session' ? sessionData?.sessions ?? []
     : blocksData?.blocks ?? [];
 
-  const totals = tab === 'daily' ? dailyData?.totals
+  const totals =
+    tab === 'daily' ? dailyData?.totals
     : tab === 'monthly' ? monthlyData?.totals
     : tab === 'session' ? sessionData?.totals
     : blocksData?.totals;
 
-  const calendarData = source === 'all'
-    ? (snapshot?.daily ?? {})
-    : { [`${source}_daily`]: snapshot?.daily?.[`${source}_daily`] };
+  const calendarData =
+    source === 'all'
+      ? snapshot?.daily ?? {}
+      : { [`${source}_daily`]: snapshot?.daily?.[`${source}_daily`] };
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b px-6 py-4">
-        <div className="flex items-center justify-between">
+      <header className="border-b px-4 sm:px-6 py-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <h1 className="text-2xl font-semibold">LLM Usage Dashboard</h1>
           <div className="flex items-center gap-4">
             {snapshot?.lastSuccess && (
-              <span className="text-sm text-muted-foreground">
-                Last updated: {new Date(snapshot.lastSuccess).toLocaleString()}
+              <span className="text-sm text-muted-foreground hidden sm:inline">
+                Updated: {new Date(snapshot.lastSuccess).toLocaleString()}
               </span>
             )}
-            <button
-              onClick={handleRefresh}
-              disabled={loading}
-              className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
+            <Button onClick={handleRefresh} disabled={loading} size="sm">
+              <RefreshCw className={cn('mr-2 h-4 w-4', loading && 'animate-spin')} />
               {loading ? 'Refreshing...' : 'Refresh'}
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -185,77 +292,81 @@ function App() {
         )}
       </header>
 
-      <main className="px-6 py-6 space-y-6">
-        <div className="flex items-center gap-4">
-          <select
-            value={source}
-            onChange={e => setSource(e.target.value as Source)}
-            className="rounded-md border bg-background px-3 py-2 text-sm"
-          >
-            {SOURCES.map(s => (
-              <option key={s} value={s}>
-                {s === 'all' ? 'All Sources' : s.charAt(0).toUpperCase() + s.slice(1)}
-              </option>
-            ))}
-          </select>
+      <main className="px-4 sm:px-6 py-6 space-y-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <SourceCombobox value={source} onValueChange={setSource} />
 
-          <div className="flex rounded-md border">
-            {TABS.map(t => (
-              <button
-                key={t.key}
-                onClick={() => setTab(t.key)}
-                className={`px-4 py-2 text-sm font-medium ${
-                  tab === t.key
-                    ? 'bg-primary text-primary-foreground'
-                    : 'hover:bg-muted'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
+          <Tabs
+            value={tab}
+            onValueChange={(v) => setTab(v as ReportType)}
+          >
+            <TabsList>
+              {REPORT_TABS.map((t) => (
+                <TabsTrigger key={t.key} value={t.key}>
+                  {t.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+
+          <div className="flex items-center gap-1 ml-auto">
+            <Button
+              variant={view === 'table' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setView('table')}
+            >
+              <Table className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={view === 'chart' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setView('chart')}
+            >
+              <BarChart3 className="h-4 w-4" />
+            </Button>
           </div>
         </div>
 
         {totals && (
-          <div className="grid grid-cols-4 gap-4">
-            <div className="rounded-lg border p-4">
-              <div className="text-sm text-muted-foreground">Total Cost</div>
-              <div className="text-2xl font-bold">{totals.costFormatted ?? '$0.00'}</div>
-            </div>
-            <div className="rounded-lg border p-4">
-              <div className="text-sm text-muted-foreground">Total Tokens</div>
-              <div className="text-2xl font-bold">{(totals.totalTokens ?? 0).toLocaleString()}</div>
-            </div>
-            <div className="rounded-lg border p-4">
-              <div className="text-sm text-muted-foreground">Input Tokens</div>
-              <div className="text-2xl font-bold">{(totals.inputTokens ?? 0).toLocaleString()}</div>
-            </div>
-            <div className="rounded-lg border p-4">
-              <div className="text-sm text-muted-foreground">Output Tokens</div>
-              <div className="text-2xl font-bold">{(totals.outputTokens ?? 0).toLocaleString()}</div>
-            </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <MetricCard title="Total Tokens" value={totals.totalTokens} />
+            <MetricCard title="Input" value={totals.inputTokens} />
+            <MetricCard title="Cache Hit" value={totals.cacheReadTokens} />
+            <MetricCard title="Output" value={totals.outputTokens} />
           </div>
         )}
 
-        <div className="rounded-lg border p-4">
-          <h2 className="text-lg font-semibold mb-4">Usage Mosaic</h2>
-          <ContributionCalendar
-            data={calendarData as any}
-            onDayClick={setSelectedDate}
-          />
-          {selectedDate && (
-            <div className="mt-2 text-sm text-muted-foreground">
-              Selected: {selectedDate}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Usage Mosaic</CardTitle>
+              {selectedDate && (
+                <Badge variant="secondary">{selectedDate}</Badge>
+              )}
             </div>
-          )}
-        </div>
+          </CardHeader>
+          <CardContent>
+            <ContributionCalendar
+              data={calendarData as any}
+              onDayClick={setSelectedDate}
+            />
+          </CardContent>
+        </Card>
 
-        <div className="rounded-lg border p-4">
-          <h2 className="text-lg font-semibold mb-4">
-            {TABS.find(t => t.key === tab)?.label} Report
-          </h2>
-          <UsageTable data={tableData} type={tab} />
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              {REPORT_TABS.find((t) => t.key === tab)?.label} Report
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {view === 'table' ? (
+              <UsageTable data={tableData} type={tab} />
+            ) : (
+              <UsageChart data={tableData} type={tab} />
+            )}
+          </CardContent>
+        </Card>
 
         {snapshot?.status === 'nodata' && !loading && (
           <div className="text-center py-12 text-muted-foreground">

@@ -8,9 +8,9 @@ interface ContributionCalendarProps {
 
 interface DayData {
   date: string;
-  cost: number;
   tokens: number;
   inputTokens: number;
+  cacheReadTokens: number;
   outputTokens: number;
   models: string[];
 }
@@ -33,11 +33,11 @@ const COLORS = [
   '#216e39',
 ];
 
-function getIntensity(cost: number): number {
-  if (cost === 0) return 0;
-  if (cost < 1) return 1;
-  if (cost < 5) return 2;
-  if (cost < 20) return 3;
+function getIntensity(tokens: number): number {
+  if (tokens === 0) return 0;
+  if (tokens < 1_000_000) return 1;
+  if (tokens < 10_000_000) return 2;
+  if (tokens < 100_000_000) return 3;
   return 4;
 }
 
@@ -62,9 +62,9 @@ export function ContributionCalendar({ data, onDayClick }: ContributionCalendarP
 
       week.push({
         date: dateStr,
-        cost: day?.costUsdNumber ?? 0,
         tokens: day?.totalTokens ?? 0,
         inputTokens: day?.inputTokens ?? 0,
+        cacheReadTokens: day?.cacheReadTokens ?? 0,
         outputTokens: day?.outputTokens ?? 0,
         models: day?.modelsUsed ?? [],
       });
@@ -146,7 +146,7 @@ export function ContributionCalendar({ data, onDayClick }: ContributionCalendarP
 
           {grid.map((week, weekIndex) =>
             week.map((day, dayIndex) => {
-              const intensity = getIntensity(day.cost);
+              const intensity = getIntensity(day.tokens);
               return (
                 <rect
                   key={day.date}
@@ -178,9 +178,9 @@ export function ContributionCalendar({ data, onDayClick }: ContributionCalendarP
         >
           <div className="font-medium mb-1 text-gray-900">{tooltip.day.date}</div>
           <div className="space-y-0.5 text-gray-600">
-            <div>Cost: <span className="text-gray-900 font-medium">${tooltip.day.cost.toFixed(2)}</span></div>
-            <div>Tokens: <span className="text-gray-900 font-medium">{tooltip.day.tokens.toLocaleString()}</span></div>
+            <div>Total: <span className="text-gray-900 font-medium">{tooltip.day.tokens.toLocaleString()}</span></div>
             <div>Input: <span className="text-gray-900">{tooltip.day.inputTokens.toLocaleString()}</span></div>
+            <div>Cache Hit: <span className="text-gray-900">{tooltip.day.cacheReadTokens.toLocaleString()}</span></div>
             <div>Output: <span className="text-gray-900">{tooltip.day.outputTokens.toLocaleString()}</span></div>
             {tooltip.day.models.length > 0 && (
               <div className="mt-1 pt-1 border-t border-gray-200">

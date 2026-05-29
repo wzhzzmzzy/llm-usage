@@ -2,6 +2,8 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::core::adapter::ModelBreakdown;
+
 /// Data source types
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -83,31 +85,14 @@ impl Cell {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageMetric {
-    pub total_cost_usd: String,
-    pub total_cost_usd_number: f64,
-    pub cost_formatted: String,
     pub total_tokens: u64,
     pub input_tokens: u64,
+    pub cache_read_tokens: u64,
     pub output_tokens: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cache_creation_tokens: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cache_read_tokens: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_count: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub model_breakdown: Option<Vec<ModelUsage>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ModelUsage {
-    pub model: String,
-    pub total_cost_usd: String,
-    pub total_cost_usd_number: f64,
-    pub total_tokens: u64,
-    pub input_tokens: u64,
-    pub output_tokens: u64,
+    pub model_breakdown: Option<Vec<ModelBreakdown>>,
 }
 
 /// Daily report row
@@ -115,20 +100,16 @@ pub struct ModelUsage {
 #[serde(rename_all = "camelCase")]
 pub struct DailyRow {
     pub date: NaiveDate,
-    pub cost_usd: String,
-    pub cost_usd_number: f64,
-    pub cost_formatted: String,
     pub total_tokens: u64,
     pub input_tokens: u64,
+    pub cache_read_tokens: u64,
     pub output_tokens: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cache_creation_tokens: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cache_read_tokens: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_count: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub models_used: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_breakdown: Option<Vec<ModelBreakdown>>,
 }
 
 /// Monthly report row
@@ -136,20 +117,16 @@ pub struct DailyRow {
 #[serde(rename_all = "camelCase")]
 pub struct MonthlyRow {
     pub month: String,
-    pub cost_usd: String,
-    pub cost_usd_number: f64,
-    pub cost_formatted: String,
     pub total_tokens: u64,
     pub input_tokens: u64,
+    pub cache_read_tokens: u64,
     pub output_tokens: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cache_creation_tokens: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cache_read_tokens: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_count: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub models_used: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_breakdown: Option<Vec<ModelBreakdown>>,
 }
 
 /// Session report row
@@ -158,16 +135,17 @@ pub struct MonthlyRow {
 pub struct SessionRow {
     pub session_id: String,
     pub project_path: Option<String>,
-    pub cost_usd: String,
-    pub cost_usd_number: f64,
-    pub cost_formatted: String,
     pub total_tokens: u64,
     pub input_tokens: u64,
+    pub cache_read_tokens: u64,
     pub output_tokens: u64,
+    pub request_count: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_activity: Option<DateTime<Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub models_used: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_breakdown: Option<Vec<ModelBreakdown>>,
 }
 
 /// Block report row
@@ -177,11 +155,9 @@ pub struct BlockRow {
     pub block_id: String,
     pub start_time: DateTime<Utc>,
     pub end_time: Option<DateTime<Utc>>,
-    pub cost_usd: String,
-    pub cost_usd_number: f64,
-    pub cost_formatted: String,
     pub total_tokens: u64,
     pub input_tokens: u64,
+    pub cache_read_tokens: u64,
     pub output_tokens: u64,
     pub is_active: bool,
     #[serde(skip_serializing_if = "Option::is_none")]

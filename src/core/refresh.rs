@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::config::AppConfig;
 use crate::core::error::RefreshError;
 use crate::core::model::*;
-use crate::core::provider::{NativeUsageProvider, RawBlockRow, RawDailyRow, RawMonthlyRow, RawSessionRow};
+use crate::core::normalize::{Normalizer, RawDailyAggregate, RawMonthlyAggregate, RawSessionAggregate};
 
 pub const MAX_CONCURRENT_COMMANDS: usize = 8;
 pub const COMMAND_TIMEOUT_SECS: u64 = 15;
@@ -29,6 +29,8 @@ pub struct RefreshManager {
     is_refreshing: Arc<RwLock<bool>>,
     last_error: Arc<Mutex<Option<String>>>,
 }
+
+use crate::core::provider::NativeUsageProvider;
 
 impl RefreshManager {
     pub fn new(_config: AppConfig) -> Self {
@@ -259,47 +261,24 @@ impl RefreshManager {
         };
         snapshot.cells.insert(key.clone(), cell_result);
 
-        #[derive(serde::Deserialize)]
-        struct DailyWrapper {
-            daily: Vec<RawDailyRow>,
-        }
-
-        #[derive(serde::Deserialize)]
-        struct MonthlyWrapper {
-            monthly: Vec<RawMonthlyRow>,
-        }
-
-        #[derive(serde::Deserialize)]
-        struct SessionWrapper {
-            #[serde(alias = "sessions")]
-            session: Vec<RawSessionRow>,
-        }
-
-        #[derive(serde::Deserialize)]
-        struct BlocksWrapper {
-            blocks: Vec<RawBlockRow>,
-        }
-
         match cell.report {
             ReportType::Daily => {
-                let wrapper: DailyWrapper = serde_json::from_str(json)?;
-                let report = crate::core::normalize::Normalizer::normalize_daily(&wrapper.daily)?;
+                let rows: Vec<RawDailyAggregate> = serde_json::from_str(json)?;
+                let report = Normalizer::normalize_daily(&rows)?;
                 snapshot.daily.insert(key, report);
             }
             ReportType::Monthly => {
-                let wrapper: MonthlyWrapper = serde_json::from_str(json)?;
-                let report = crate::core::normalize::Normalizer::normalize_monthly(&wrapper.monthly)?;
+                let rows: Vec<RawMonthlyAggregate> = serde_json::from_str(json)?;
+                let report = Normalizer::normalize_monthly(&rows)?;
                 snapshot.monthly.insert(key, report);
             }
             ReportType::Session => {
-                let wrapper: SessionWrapper = serde_json::from_str(json)?;
-                let report = crate::core::normalize::Normalizer::normalize_session(&wrapper.session)?;
+                let rows: Vec<RawSessionAggregate> = serde_json::from_str(json)?;
+                let report = Normalizer::normalize_session(&rows)?;
                 snapshot.session.insert(key, report);
             }
             ReportType::Blocks => {
-                let wrapper: BlocksWrapper = serde_json::from_str(json)?;
-                let report = crate::core::normalize::Normalizer::normalize_blocks(&wrapper.blocks)?;
-                snapshot.blocks.insert(key, report);
+                // Blocks not yet implemented
             }
         }
 

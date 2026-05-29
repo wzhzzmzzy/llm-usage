@@ -1,252 +1,222 @@
 import { describe, it, expect } from 'vitest';
+import type { DailyRow, MonthlyRow, SessionRow, ModelBreakdown } from '../api/types';
 
-const mockDailyResponse = {
-  daily: [
-    {
-      period: '2026-05-27',
-      inputTokens: 50000,
-      outputTokens: 10000,
-      cacheCreationTokens: 0,
-      cacheReadTokens: 5000,
-      totalCost: 0.15,
-      totalTokens: 60000,
-      modelsUsed: ['claude-sonnet-4-5'],
-      modelBreakdowns: [
-        {
-          modelName: 'claude-sonnet-4-5',
-          inputTokens: 50000,
-          outputTokens: 10000,
-          cacheCreationTokens: 0,
-          cacheReadTokens: 5000,
-          cost: 0.15,
-        },
-      ],
-    },
-    {
-      period: '2026-05-28',
-      inputTokens: 100000,
-      outputTokens: 20000,
-      cacheCreationTokens: 1000,
-      cacheReadTokens: 10000,
-      totalCost: 0.35,
-      totalTokens: 120000,
-      modelsUsed: ['claude-sonnet-4-5', 'gemini-3-pro-preview'],
-    },
-  ],
-};
-
-const mockSessionResponse = {
-  session: [
-    {
-      period: 'ses_abc123def456',
-      inputTokens: 30000,
-      outputTokens: 5000,
-      cacheCreationTokens: 0,
-      cacheReadTokens: 2000,
-      totalCost: 0.08,
-      totalTokens: 35000,
-      modelsUsed: ['claude-sonnet-4-5'],
-      lastActivity: '2026-05-28',
-      projectPath: '/Users/test/my-project',
-      metadata: {
-        lastActivity: '2026-05-28',
-        projectPath: '/Users/test/my-project',
+const mockDailyRows: DailyRow[] = [
+  {
+    date: '2026-05-29',
+    totalTokens: 150000,
+    inputTokens: 100000,
+    cacheReadTokens: 20000,
+    outputTokens: 30000,
+    requestCount: 10,
+    modelsUsed: ['gpt-5.5', 'claude-sonnet-4'],
+    modelBreakdown: [
+      {
+        model: 'gpt-5.5',
+        inputTokens: 60000,
+        cacheReadTokens: 15000,
+        outputTokens: 20000,
+        totalTokens: 95000,
+        requestCount: 6,
       },
-    },
-  ],
-};
+      {
+        model: 'claude-sonnet-4',
+        inputTokens: 40000,
+        cacheReadTokens: 5000,
+        outputTokens: 10000,
+        totalTokens: 55000,
+        requestCount: 4,
+      },
+    ],
+  },
+  {
+    date: '2026-05-28',
+    totalTokens: 80000,
+    inputTokens: 50000,
+    cacheReadTokens: 10000,
+    outputTokens: 20000,
+    requestCount: 5,
+    modelsUsed: ['gpt-5.5'],
+  },
+];
 
-const mockBlocksResponse = {
-  blocks: [
-    {
-      id: '2026-05-28T09:00:00.000Z',
-      startTime: '2026-05-28T09:00:00.000Z',
-      endTime: '2026-05-28T12:00:00.000Z',
-      actualEndTime: '2026-05-28T11:30:00.000Z',
-      isActive: false,
-      isGap: false,
-      models: ['claude-sonnet-4-5'],
-      costUsd: 5.25,
-      totalTokens: 500000,
-      tokenCounts: {
-        inputTokens: 400000,
+const mockMonthlyRows: MonthlyRow[] = [
+  {
+    month: '2026-05',
+    totalTokens: 500000,
+    inputTokens: 300000,
+    cacheReadTokens: 50000,
+    outputTokens: 150000,
+    requestCount: 50,
+    modelsUsed: ['gpt-5.5', 'claude-sonnet-4'],
+    modelBreakdown: [
+      {
+        model: 'gpt-5.5',
+        inputTokens: 200000,
+        cacheReadTokens: 30000,
         outputTokens: 100000,
-        cacheCreationInputTokens: 0,
-        cacheReadInputTokens: 50000,
+        totalTokens: 330000,
+        requestCount: 30,
       },
-      entries: 15,
-    },
-    {
-      id: '2026-05-28T12:00:00.000Z',
-      startTime: '2026-05-28T12:00:00.000Z',
-      endTime: null,
-      actualEndTime: null,
-      isActive: true,
-      isGap: false,
-      models: ['claude-sonnet-4-5'],
-      costUsd: 2.10,
-      totalTokens: 200000,
-      tokenCounts: {
-        inputTokens: 150000,
+      {
+        model: 'claude-sonnet-4',
+        inputTokens: 100000,
+        cacheReadTokens: 20000,
         outputTokens: 50000,
-        cacheCreationInputTokens: 0,
-        cacheReadInputTokens: 20000,
+        totalTokens: 170000,
+        requestCount: 20,
       },
-      entries: 5,
-    },
-    {
-      id: 'gap-2026-05-28T08:00:00.000Z',
-      startTime: '2026-05-28T08:00:00.000Z',
-      endTime: '2026-05-28T09:00:00.000Z',
-      actualEndTime: null,
-      isActive: false,
-      isGap: true,
-      models: [],
-      costUsd: 0,
-      totalTokens: 0,
-      tokenCounts: null,
-      entries: 0,
-    },
-  ],
-};
+    ],
+  },
+];
 
-function normalizeDaily(data: typeof mockDailyResponse) {
-  return data.daily.map(row => ({
-    date: row.period,
-    costUsdNumber: row.totalCost,
-    costFormatted: `$${row.totalCost.toFixed(2)}`,
-    totalTokens: row.totalTokens ?? (row.inputTokens + row.outputTokens),
-    inputTokens: row.inputTokens,
-    outputTokens: row.outputTokens,
-    cacheCreationTokens: row.cacheCreationTokens,
-    cacheReadTokens: row.cacheReadTokens,
-    modelsUsed: row.modelsUsed,
-  }));
-}
+const mockSessionRows: SessionRow[] = [
+  {
+    sessionId: 'ses_abc123def456',
+    projectPath: '/Users/test/my-project',
+    totalTokens: 35000,
+    inputTokens: 25000,
+    cacheReadTokens: 5000,
+    outputTokens: 5000,
+    requestCount: 3,
+    lastActivity: '2026-05-29T10:00:00Z',
+    modelsUsed: ['gpt-5.5'],
+    modelBreakdown: [
+      {
+        model: 'gpt-5.5',
+        inputTokens: 25000,
+        cacheReadTokens: 5000,
+        outputTokens: 5000,
+        totalTokens: 35000,
+        requestCount: 3,
+      },
+    ],
+  },
+];
 
-function normalizeSession(data: typeof mockSessionResponse) {
-  return data.session.map(row => ({
-    sessionId: row.period,
-    projectPath: row.projectPath ?? row.metadata?.projectPath ?? null,
-    costUsdNumber: row.totalCost,
-    costFormatted: `$${row.totalCost.toFixed(2)}`,
-    totalTokens: row.totalTokens ?? (row.inputTokens + row.outputTokens),
-    inputTokens: row.inputTokens,
-    outputTokens: row.outputTokens,
-    lastActivity: row.lastActivity ?? row.metadata?.lastActivity ?? null,
-    modelsUsed: row.modelsUsed,
-  }));
-}
-
-function normalizeBlocks(data: typeof mockBlocksResponse) {
-  return data.blocks
-    .filter(row => !row.isGap)
-    .map(row => ({
-      blockId: row.id,
-      startTime: row.startTime,
-      endTime: row.actualEndTime ?? row.endTime,
-      costUsdNumber: row.costUsd ?? 0,
-      costFormatted: `$${(row.costUsd ?? 0).toFixed(2)}`,
-      totalTokens: row.totalTokens ?? 0,
-      inputTokens: row.tokenCounts?.inputTokens ?? 0,
-      outputTokens: row.tokenCounts?.outputTokens ?? 0,
-      isActive: row.isActive,
-      modelsUsed: row.models ?? [],
-    }));
-}
-
-describe('normalizeDaily', () => {
-  it('should normalize daily rows', () => {
-    const result = normalizeDaily(mockDailyResponse);
-    expect(result).toHaveLength(2);
+describe('DailyRow types', () => {
+  it('should have correct structure', () => {
+    const row = mockDailyRows[0];
+    expect(row.date).toBe('2026-05-29');
+    expect(row.totalTokens).toBe(150000);
+    expect(row.inputTokens).toBe(100000);
+    expect(row.cacheReadTokens).toBe(20000);
+    expect(row.outputTokens).toBe(30000);
+    expect(row.requestCount).toBe(10);
+    expect(row.modelsUsed).toEqual(['gpt-5.5', 'claude-sonnet-4']);
   });
 
-  it('should parse date correctly', () => {
-    const result = normalizeDaily(mockDailyResponse);
-    expect(result[0].date).toBe('2026-05-27');
+  it('should have model breakdown', () => {
+    const row = mockDailyRows[0];
+    expect(row.modelBreakdown).toHaveLength(2);
+    expect(row.modelBreakdown![0].model).toBe('gpt-5.5');
+    expect(row.modelBreakdown![0].inputTokens).toBe(60000);
+    expect(row.modelBreakdown![0].cacheReadTokens).toBe(15000);
+    expect(row.modelBreakdown![0].outputTokens).toBe(20000);
+    expect(row.modelBreakdown![0].totalTokens).toBe(95000);
+    expect(row.modelBreakdown![0].requestCount).toBe(6);
   });
 
-  it('should calculate totalTokens', () => {
-    const result = normalizeDaily(mockDailyResponse);
-    expect(result[0].totalTokens).toBe(60000);
+  it('should handle optional model breakdown', () => {
+    const row = mockDailyRows[1];
+    expect(row.modelBreakdown).toBeUndefined();
   });
 
-  it('should format cost', () => {
-    const result = normalizeDaily(mockDailyResponse);
-    expect(result[0].costFormatted).toBe('$0.15');
-  });
-
-  it('should handle modelsUsed', () => {
-    const result = normalizeDaily(mockDailyResponse);
-    expect(result[0].modelsUsed).toEqual(['claude-sonnet-4-5']);
-    expect(result[1].modelsUsed).toEqual(['claude-sonnet-4-5', 'gemini-3-pro-preview']);
+  it('should have consistent totals', () => {
+    const row = mockDailyRows[0];
+    const breakdownTotal = row.modelBreakdown!.reduce((sum, m) => sum + m.totalTokens, 0);
+    expect(breakdownTotal).toBe(row.totalTokens);
   });
 });
 
-describe('normalizeSession', () => {
-  it('should normalize session rows', () => {
-    const result = normalizeSession(mockSessionResponse);
-    expect(result).toHaveLength(1);
+describe('MonthlyRow types', () => {
+  it('should have correct structure', () => {
+    const row = mockMonthlyRows[0];
+    expect(row.month).toBe('2026-05');
+    expect(row.totalTokens).toBe(500000);
+    expect(row.inputTokens).toBe(300000);
+    expect(row.cacheReadTokens).toBe(50000);
+    expect(row.outputTokens).toBe(150000);
+    expect(row.requestCount).toBe(50);
   });
 
-  it('should parse sessionId', () => {
-    const result = normalizeSession(mockSessionResponse);
-    expect(result[0].sessionId).toBe('ses_abc123def456');
-  });
-
-  it('should extract projectPath from metadata', () => {
-    const result = normalizeSession(mockSessionResponse);
-    expect(result[0].projectPath).toBe('/Users/test/my-project');
-  });
-
-  it('should extract lastActivity from metadata', () => {
-    const result = normalizeSession(mockSessionResponse);
-    expect(result[0].lastActivity).toBe('2026-05-28');
+  it('should have model breakdown', () => {
+    const row = mockMonthlyRows[0];
+    expect(row.modelBreakdown).toHaveLength(2);
   });
 });
 
-describe('normalizeBlocks', () => {
-  it('should filter out gap blocks', () => {
-    const result = normalizeBlocks(mockBlocksResponse);
-    expect(result).toHaveLength(2);
+describe('SessionRow types', () => {
+  it('should have correct structure', () => {
+    const row = mockSessionRows[0];
+    expect(row.sessionId).toBe('ses_abc123def456');
+    expect(row.projectPath).toBe('/Users/test/my-project');
+    expect(row.totalTokens).toBe(35000);
+    expect(row.inputTokens).toBe(25000);
+    expect(row.cacheReadTokens).toBe(5000);
+    expect(row.outputTokens).toBe(5000);
+    expect(row.requestCount).toBe(3);
+    expect(row.lastActivity).toBe('2026-05-29T10:00:00Z');
   });
 
-  it('should parse blockId', () => {
-    const result = normalizeBlocks(mockBlocksResponse);
-    expect(result[0].blockId).toBe('2026-05-28T09:00:00.000Z');
+  it('should have model breakdown', () => {
+    const row = mockSessionRows[0];
+    expect(row.modelBreakdown).toHaveLength(1);
+    expect(row.modelBreakdown![0].model).toBe('gpt-5.5');
+  });
+});
+
+describe('ModelBreakdown types', () => {
+  it('should have correct structure', () => {
+    const breakdown: ModelBreakdown = {
+      model: 'gpt-5.5',
+      inputTokens: 1000,
+      cacheReadTokens: 200,
+      outputTokens: 300,
+      totalTokens: 1500,
+      requestCount: 5,
+    };
+    expect(breakdown.model).toBe('gpt-5.5');
+    expect(breakdown.inputTokens).toBe(1000);
+    expect(breakdown.cacheReadTokens).toBe(200);
+    expect(breakdown.outputTokens).toBe(300);
+    expect(breakdown.totalTokens).toBe(1500);
+    expect(breakdown.requestCount).toBe(5);
   });
 
-  it('should extract tokenCounts', () => {
-    const result = normalizeBlocks(mockBlocksResponse);
-    expect(result[0].inputTokens).toBe(400000);
-    expect(result[0].outputTokens).toBe(100000);
-  });
-
-  it('should handle isActive', () => {
-    const result = normalizeBlocks(mockBlocksResponse);
-    expect(result[0].isActive).toBe(false);
-    expect(result[1].isActive).toBe(true);
-  });
-
-  it('should use actualEndTime for endTime', () => {
-    const result = normalizeBlocks(mockBlocksResponse);
-    expect(result[0].endTime).toBe('2026-05-28T11:30:00.000Z');
+  it('should have consistent totals', () => {
+    const breakdown: ModelBreakdown = {
+      model: 'gpt-5.5',
+      inputTokens: 1000,
+      cacheReadTokens: 200,
+      outputTokens: 300,
+      totalTokens: 1500,
+      requestCount: 5,
+    };
+    // totalTokens should equal inputTokens + cacheReadTokens + outputTokens
+    expect(breakdown.totalTokens).toBe(
+      breakdown.inputTokens + breakdown.cacheReadTokens + breakdown.outputTokens
+    );
   });
 });
 
 describe('table data safety', () => {
   it('should handle undefined values in daily rows', () => {
-    const unsafeRow = {
+    const unsafeRow: Partial<DailyRow> = {
       date: '2026-05-28',
-      costFormatted: undefined,
       totalTokens: undefined,
       inputTokens: undefined,
+      cacheReadTokens: undefined,
       outputTokens: undefined,
     };
-    const safeCost = unsafeRow.costFormatted ?? '$0.00';
-    const safeTokens = (unsafeRow.totalTokens ?? 0).toLocaleString();
-    expect(safeCost).toBe('$0.00');
-    expect(safeTokens).toBe('0');
+    const safeTotal = (unsafeRow.totalTokens ?? 0).toLocaleString();
+    const safeInput = (unsafeRow.inputTokens ?? 0).toLocaleString();
+    const safeCache = (unsafeRow.cacheReadTokens ?? 0).toLocaleString();
+    const safeOutput = (unsafeRow.outputTokens ?? 0).toLocaleString();
+    expect(safeTotal).toBe('0');
+    expect(safeInput).toBe('0');
+    expect(safeCache).toBe('0');
+    expect(safeOutput).toBe('0');
   });
 
   it('should handle null values in session rows', () => {
@@ -261,5 +231,11 @@ describe('table data safety', () => {
     expect(safeId).toBe('');
     expect(safePath).toBe('-');
     expect(safeDate).toBe('-');
+  });
+
+  it('should handle empty modelsUsed', () => {
+    const models: string[] | undefined = undefined;
+    const safeModels = models && models.length > 0 ? models.join(', ') : '-';
+    expect(safeModels).toBe('-');
   });
 });

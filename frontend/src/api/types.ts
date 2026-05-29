@@ -4,78 +4,66 @@ export type CellStatus = 'success' | 'stale' | 'error';
 export type SnapshotStatus = 'success' | 'partial' | 'error' | 'nodata';
 export type HealthStatus = 'healthy' | 'degraded' | 'unhealthy';
 
-export interface UsageMetric {
-  totalCostUsd: string;
-  totalCostUsdNumber: number;
-  costFormatted: string;
-  totalTokens: number;
+export interface ModelBreakdown {
+  model: string;
   inputTokens: number;
+  cacheReadTokens: number;
   outputTokens: number;
-  cacheCreationTokens?: number;
-  cacheReadTokens?: number;
-  requestCount?: number;
-  modelBreakdown?: ModelUsage[];
+  totalTokens: number;
+  requestCount: number;
 }
 
-export interface ModelUsage {
-  model: string;
-  totalCostUsd: string;
-  totalCostUsdNumber: number;
+export interface UsageMetric {
   totalTokens: number;
   inputTokens: number;
+  cacheReadTokens: number;
   outputTokens: number;
+  requestCount?: number;
+  modelBreakdown?: ModelBreakdown[];
 }
 
 export interface DailyRow {
   date: string;
-  costUsd: string;
-  costUsdNumber: number;
-  costFormatted: string;
   totalTokens: number;
   inputTokens: number;
+  cacheReadTokens: number;
   outputTokens: number;
-  cacheCreationTokens?: number;
-  cacheReadTokens?: number;
   requestCount?: number;
   modelsUsed?: string[];
+  modelBreakdown?: ModelBreakdown[];
 }
 
 export interface MonthlyRow {
   month: string;
-  costUsd: string;
-  costUsdNumber: number;
-  costFormatted: string;
   totalTokens: number;
   inputTokens: number;
+  cacheReadTokens: number;
   outputTokens: number;
-  cacheCreationTokens?: number;
-  cacheReadTokens?: number;
   requestCount?: number;
   modelsUsed?: string[];
+  modelBreakdown?: ModelBreakdown[];
 }
 
 export interface SessionRow {
   sessionId: string;
   projectPath?: string;
-  costUsd: string;
-  costUsdNumber: number;
-  costFormatted: string;
   totalTokens: number;
   inputTokens: number;
+  cacheReadTokens: number;
   outputTokens: number;
+  requestCount: number;
   lastActivity?: string;
   modelsUsed?: string[];
+  modelBreakdown?: ModelBreakdown[];
 }
 
 export interface BlockRow {
   blockId: string;
   startTime: string;
   endTime?: string;
-  costUsd: string;
-  costUsdNumber: number;
-  costFormatted: string;
   totalTokens: number;
   inputTokens: number;
+  cacheReadTokens: number;
   outputTokens: number;
   isActive: boolean;
   modelsUsed?: string[];
