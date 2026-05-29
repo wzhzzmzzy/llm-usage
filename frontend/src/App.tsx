@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HttpUsageApi } from './api/http-usage-api';
-import type { Snapshot, Source, ReportType, UsageApi } from './api/types';
+import type { Snapshot, Source, ReportType, UsageApi, RefreshStatus } from './api/types';
 import { ContributionCalendar } from './components/contribution-calendar';
 import { UsageTable } from './components/usage-table';
 
@@ -31,6 +31,11 @@ function createApi(): UsageApi {
         if (!invoke) throw new Error('Tauri not available');
         return invoke('refresh');
       },
+      async refreshStatus() {
+        const invoke = await getTauriInvoke();
+        if (!invoke) throw new Error('Tauri not available');
+        return invoke('refresh_status');
+      },
       async getSnapshot() {
         const invoke = await getTauriInvoke();
         if (!invoke) throw new Error('Tauri not available');
@@ -54,34 +59,78 @@ const TABS: { key: ReportType; label: string }[] = [
 function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [loading, setLoading] = useState(false);
+  const [refreshStatus, setRefreshStatus] = useState<RefreshStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [source, setSource] = useState<Source>('all');
   const [tab, setTab] = useState<ReportType>('daily');
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const hasRefreshed = useRef(false);
+  const pollIntervalRef = useRef<number | null>(null);
+
+  const loadSnapshot = useCallback(async () => {
+    try {
+      const snap = await api.getSnapshot();
+      setSnapshot(snap);
+    } catch (e) {
+      console.error('Failed to load snapshot:', e);
+    }
+  }, []);
+
+  const pollRefreshStatus = useCallback(async () => {
+    try {
+      const status = await api.refreshStatus();
+      setRefreshStatus(status);
+
+      if (!status.isRefreshing) {
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
+        }
+        setLoading(false);
+        await loadSnapshot();
+
+        if (status.lastError) {
+          setError(status.lastError);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to poll refresh status:', e);
+    }
+  }, [loadSnapshot]);
 
   const handleRefresh = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.refresh();
-      setSnapshot(res.snapshot);
-      if (res.status === 'error') {
-        setError('Refresh failed. Previous data preserved.');
+      const status = await api.refresh();
+      setRefreshStatus(status);
+
+      if (status.isRefreshing) {
+        pollIntervalRef.current = window.setInterval(pollRefreshStatus, 1000);
+      } else {
+        setLoading(false);
+        await loadSnapshot();
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Refresh failed');
-    } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadSnapshot, pollRefreshStatus]);
 
   useEffect(() => {
     if (!hasRefreshed.current) {
       hasRefreshed.current = true;
-      handleRefresh();
+      loadSnapshot().then(() => {
+        handleRefresh();
+      });
     }
-  }, [handleRefresh]);
+
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+    };
+  }, [loadSnapshot, handleRefresh]);
 
   const dailyData = snapshot?.daily?.[source === 'all' ? 'all_daily' : `${source}_daily`];
   const monthlyData = snapshot?.monthly?.[source === 'all' ? 'all_monthly' : `${source}_monthly`];
@@ -126,6 +175,12 @@ function App() {
         {error && (
           <div className="mt-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
             {error}
+          </div>
+        )}
+
+        {loading && refreshStatus?.isRefreshing && (
+          <div className="mt-2 rounded-md bg-blue-500/10 p-3 text-sm text-blue-500">
+            Refreshing data in background...
           </div>
         )}
       </header>
@@ -202,7 +257,7 @@ function App() {
           <UsageTable data={tableData} type={tab} />
         </div>
 
-        {snapshot?.status === 'nodata' && (
+        {snapshot?.status === 'nodata' && !loading && (
           <div className="text-center py-12 text-muted-foreground">
             No data available. Click Refresh to fetch usage data.
           </div>

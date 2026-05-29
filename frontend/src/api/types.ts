@@ -143,8 +143,17 @@ export interface RefreshResponse {
   snapshot: Snapshot;
 }
 
+export interface RefreshStatus {
+  isRefreshing: boolean;
+  lastRefresh?: string;
+  lastSuccess?: string;
+  lastError?: string;
+  snapshotStatus: SnapshotStatus;
+}
+
 export interface UsageApi {
   health(): Promise<HealthResponse>;
-  refresh(): Promise<RefreshResponse>;
+  refresh(): Promise<RefreshStatus>;
+  refreshStatus(): Promise<RefreshStatus>;
   getSnapshot(): Promise<Snapshot>;
 }

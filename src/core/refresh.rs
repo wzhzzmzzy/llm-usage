@@ -1,6 +1,8 @@
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use tokio::time::{timeout, Duration};
+
+use serde::{Deserialize, Serialize};
 
 use crate::config::AppConfig;
 use crate::core::error::RefreshError;
@@ -11,9 +13,21 @@ pub const MAX_CONCURRENT_COMMANDS: usize = 8;
 pub const COMMAND_TIMEOUT_SECS: u64 = 15;
 pub const REFRESH_TIMEOUT_SECS: u64 = 60;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefreshStatus {
+    pub is_refreshing: bool,
+    pub last_refresh: Option<chrono::DateTime<chrono::Utc>>,
+    pub last_success: Option<chrono::DateTime<chrono::Utc>>,
+    pub last_error: Option<String>,
+    pub snapshot_status: SnapshotStatus,
+}
+
 pub struct RefreshManager {
     provider: Arc<NativeUsageProvider>,
     snapshot: Arc<Mutex<Snapshot>>,
+    is_refreshing: Arc<RwLock<bool>>,
+    last_error: Arc<Mutex<Option<String>>>,
 }
 
 impl RefreshManager {
@@ -21,6 +35,8 @@ impl RefreshManager {
         Self {
             provider: Arc::new(NativeUsageProvider::new()),
             snapshot: Arc::new(Mutex::new(Snapshot::default())),
+            is_refreshing: Arc::new(RwLock::new(false)),
+            last_error: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -28,30 +44,93 @@ impl RefreshManager {
         self.snapshot.lock().await.clone()
     }
 
-    pub async fn refresh(&self) -> Result<RefreshResponse, RefreshError> {
-        self.execute_refresh().await
+    pub async fn get_refresh_status(&self) -> RefreshStatus {
+        let is_refreshing = *self.is_refreshing.read().await;
+        let snapshot = self.snapshot.lock().await.clone();
+        let last_error = self.last_error.lock().await.clone();
+
+        RefreshStatus {
+            is_refreshing,
+            last_refresh: snapshot.last_refresh,
+            last_success: snapshot.last_success,
+            last_error,
+            snapshot_status: snapshot.status,
+        }
     }
 
-    async fn execute_refresh(&self) -> Result<RefreshResponse, RefreshError> {
-        self.provider.preload().await;
+    /// Start a background refresh. Returns immediately.
+    pub async fn start_refresh(&self) -> Result<RefreshStatus, RefreshError> {
+        {
+            let refreshing = self.is_refreshing.read().await;
+            if *refreshing {
+                return Ok(self.get_refresh_status().await);
+            }
+        }
 
-        let cells = self.plan_cells();
+        {
+            let mut refreshing = self.is_refreshing.write().await;
+            *refreshing = true;
+        }
+
+        let provider = self.provider.clone();
+        let snapshot = self.snapshot.clone();
+        let is_refreshing = self.is_refreshing.clone();
+        let last_error = self.last_error.clone();
+
+        tokio::spawn(async move {
+            let result = Self::execute_refresh_inner(provider.clone(), snapshot.clone()).await;
+
+            let mut error_guard = last_error.lock().await;
+            match result {
+                Ok(_) => {
+                    *error_guard = None;
+                }
+                Err(e) => {
+                    *error_guard = Some(e.to_string());
+                }
+            }
+
+            let mut refreshing = is_refreshing.write().await;
+            *refreshing = false;
+        });
+
+        Ok(self.get_refresh_status().await)
+    }
+
+    /// Synchronous refresh (used by CLI)
+    pub async fn refresh(&self) -> Result<RefreshResponse, RefreshError> {
+        self.provider.preload().await;
+        let result = Self::execute_refresh_inner(self.provider.clone(), self.snapshot.clone()).await?;
+
+        let mut error_guard = self.last_error.lock().await;
+        *error_guard = None;
+
+        Ok(result)
+    }
+
+    async fn execute_refresh_inner(
+        provider: Arc<NativeUsageProvider>,
+        snapshot: Arc<Mutex<Snapshot>>,
+    ) -> Result<RefreshResponse, RefreshError> {
+        provider.preload().await;
+
+        let cells = Self::plan_cells(&provider);
         if cells.is_empty() {
-            let mut snapshot = self.snapshot.lock().await.clone();
-            snapshot.status = SnapshotStatus::NoData;
-            snapshot.last_refresh = Some(chrono::Utc::now());
-            *self.snapshot.lock().await = snapshot.clone();
-            return Ok(RefreshResponse {
+            let mut snapshot_guard = snapshot.lock().await;
+            snapshot_guard.status = SnapshotStatus::NoData;
+            snapshot_guard.last_refresh = Some(chrono::Utc::now());
+            let response = RefreshResponse {
                 status: SnapshotStatus::NoData,
-                snapshot,
-            });
+                snapshot: snapshot_guard.clone(),
+            };
+            return Ok(response);
         }
 
         let semaphore = Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_COMMANDS));
         let mut handles = Vec::new();
 
         for cell in cells {
-            let provider = self.provider.clone();
+            let provider = provider.clone();
             let sem = semaphore.clone();
 
             handles.push(tokio::spawn(async move {
@@ -85,21 +164,21 @@ impl RefreshManager {
             Err(_) => return Err(RefreshError::Timeout(REFRESH_TIMEOUT_SECS)),
         };
 
-        let mut snapshot = self.snapshot.lock().await.clone();
+        let mut snapshot_guard = snapshot.lock().await;
         let mut success_count = 0;
         let mut error_count = 0;
 
         for result in results {
             match result {
-                Ok((cell, Ok(json))) => match self.process_cell(&mut snapshot, cell, &json) {
+                Ok((cell, Ok(json))) => match Self::process_cell(&mut snapshot_guard, cell, &json) {
                     Ok(()) => success_count += 1,
                     Err(e) => {
-                        self.mark_cell_error(&mut snapshot, cell, &e.to_string());
+                        Self::mark_cell_error(&mut snapshot_guard, cell, &e.to_string());
                         error_count += 1;
                     }
                 },
                 Ok((cell, Err(e))) => {
-                    self.mark_cell_error(&mut snapshot, cell, &e.to_string());
+                    Self::mark_cell_error(&mut snapshot_guard, cell, &e.to_string());
                     error_count += 1;
                 }
                 Err(e) => {
@@ -110,38 +189,37 @@ impl RefreshManager {
         }
 
         let now = chrono::Utc::now();
-        snapshot.last_refresh = Some(now);
+        snapshot_guard.last_refresh = Some(now);
 
         if success_count > 0 && error_count == 0 {
-            snapshot.status = SnapshotStatus::Success;
-            snapshot.last_success = Some(now);
+            snapshot_guard.status = SnapshotStatus::Success;
+            snapshot_guard.last_success = Some(now);
         } else if success_count > 0 {
-            snapshot.status = SnapshotStatus::Partial;
-            snapshot.last_success = Some(now);
-        } else if snapshot.daily.is_empty() {
-            snapshot.status = SnapshotStatus::NoData;
-            snapshot.last_error = Some(now);
+            snapshot_guard.status = SnapshotStatus::Partial;
+            snapshot_guard.last_success = Some(now);
+        } else if snapshot_guard.daily.is_empty() {
+            snapshot_guard.status = SnapshotStatus::NoData;
+            snapshot_guard.last_error = Some(now);
         } else {
-            snapshot.status = SnapshotStatus::Partial;
-            snapshot.last_error = Some(now);
+            snapshot_guard.status = SnapshotStatus::Partial;
+            snapshot_guard.last_error = Some(now);
         }
 
-        let status = snapshot.status;
-        *self.snapshot.lock().await = snapshot.clone();
-
-        Ok(RefreshResponse {
+        let status = snapshot_guard.status;
+        let response = RefreshResponse {
             status,
-            snapshot,
-        })
+            snapshot: snapshot_guard.clone(),
+        };
+
+        Ok(response)
     }
 
-    /// Plan which cells to execute. Skip sources with no data directories.
-    fn plan_cells(&self) -> Vec<Cell> {
+    fn plan_cells(provider: &NativeUsageProvider) -> Vec<Cell> {
         let mut cells = Vec::new();
         let mut has_any_source = false;
 
         for source in [Source::Claude, Source::Codex, Source::Opencode] {
-            if self.provider.source_has_data(source) {
+            if provider.source_has_data(source) {
                 has_any_source = true;
                 for report in ReportType::all_variants() {
                     cells.push(Cell {
@@ -165,7 +243,6 @@ impl RefreshManager {
     }
 
     fn process_cell(
-        &self,
         snapshot: &mut Snapshot,
         cell: Cell,
         json: &str,
@@ -207,37 +284,29 @@ impl RefreshManager {
             ReportType::Daily => {
                 let wrapper: DailyWrapper = serde_json::from_str(json)?;
                 let report = crate::core::normalize::Normalizer::normalize_daily(&wrapper.daily)?;
-                snapshot
-                    .daily
-                    .insert(Snapshot::cell_key(cell.source, cell.report), report);
+                snapshot.daily.insert(key, report);
             }
             ReportType::Monthly => {
                 let wrapper: MonthlyWrapper = serde_json::from_str(json)?;
                 let report = crate::core::normalize::Normalizer::normalize_monthly(&wrapper.monthly)?;
-                snapshot
-                    .monthly
-                    .insert(Snapshot::cell_key(cell.source, cell.report), report);
+                snapshot.monthly.insert(key, report);
             }
             ReportType::Session => {
                 let wrapper: SessionWrapper = serde_json::from_str(json)?;
                 let report = crate::core::normalize::Normalizer::normalize_session(&wrapper.session)?;
-                snapshot
-                    .session
-                    .insert(Snapshot::cell_key(cell.source, cell.report), report);
+                snapshot.session.insert(key, report);
             }
             ReportType::Blocks => {
                 let wrapper: BlocksWrapper = serde_json::from_str(json)?;
                 let report = crate::core::normalize::Normalizer::normalize_blocks(&wrapper.blocks)?;
-                snapshot
-                    .blocks
-                    .insert(Snapshot::cell_key(cell.source, cell.report), report);
+                snapshot.blocks.insert(key, report);
             }
         }
 
         Ok(())
     }
 
-    fn mark_cell_error(&self, snapshot: &mut Snapshot, cell: Cell, error: &str) {
+    fn mark_cell_error(snapshot: &mut Snapshot, cell: Cell, error: &str) {
         let key = Snapshot::cell_key(cell.source, cell.report);
 
         let prev_status = snapshot

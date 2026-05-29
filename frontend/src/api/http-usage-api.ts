@@ -1,4 +1,4 @@
-import type { HealthResponse, RefreshResponse, Snapshot, UsageApi } from './types';
+import type { HealthResponse, RefreshStatus, Snapshot, UsageApi } from './types';
 
 export class HttpUsageApi implements UsageApi {
   private baseUrl: string;
@@ -13,9 +13,15 @@ export class HttpUsageApi implements UsageApi {
     return res.json();
   }
 
-  async refresh(): Promise<RefreshResponse> {
+  async refresh(): Promise<RefreshStatus> {
     const res = await fetch(`${this.baseUrl}/api/refresh`, { method: 'POST' });
     if (!res.ok) throw new Error(`Refresh failed: ${res.status}`);
+    return res.json();
+  }
+
+  async refreshStatus(): Promise<RefreshStatus> {
+    const res = await fetch(`${this.baseUrl}/api/refresh-status`);
+    if (!res.ok) throw new Error(`Refresh status failed: ${res.status}`);
     return res.json();
   }
 
