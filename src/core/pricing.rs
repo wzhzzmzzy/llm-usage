@@ -27,7 +27,7 @@ pub struct Pricing {
 }
 
 /// Map of model name to pricing information
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct PricingMap {
     entries: HashMap<String, Pricing>,
     context_limits: HashMap<String, u64>,
@@ -47,9 +47,9 @@ struct LiteLlmPricing {
     max_input_tokens: Option<u64>,
 }
 
-/// Global pricing cache with daily refresh
 pub struct PricingCache {
     pricing: RwLock<PricingMap>,
+    snapshot: std::sync::RwLock<PricingMap>,
     cache_dir: PathBuf,
 }
 
@@ -64,6 +64,7 @@ impl PricingCache {
         
         Ok(Self {
             pricing: RwLock::new(PricingMap::default()),
+            snapshot: std::sync::RwLock::new(PricingMap::default()),
             cache_dir,
         })
     }
@@ -79,11 +80,23 @@ impl PricingCache {
         if self.load_from_cache().await.is_ok() {
             let pricing = self.pricing.read().await;
             if pricing.is_loaded() {
+                self.sync_snapshot(&pricing);
                 return;
             }
         }
 
         let _ = self.fetch_and_cache().await;
+        let pricing = self.pricing.read().await;
+        self.sync_snapshot(&pricing);
+    }
+
+    pub fn get_snapshot_sync(&self) -> PricingMap {
+        self.snapshot.read().unwrap().clone()
+    }
+
+    fn sync_snapshot(&self, pricing: &PricingMap) {
+        let mut snap = self.snapshot.write().unwrap();
+        *snap = pricing.clone();
     }
 
     /// Get pricing for a model, fetching from LiteLLM if needed

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 
-use crate::core::model::{HealthResponse, RefreshResponse, Snapshot};
+use crate::core::model::{HealthResponse, Snapshot};
 use crate::core::refresh::{RefreshManager, RefreshStatus};
 
 #[derive(Clone)]

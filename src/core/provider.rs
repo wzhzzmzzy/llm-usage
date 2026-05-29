@@ -101,7 +101,7 @@ pub struct RawBlockRow {
 
 /// Cached entries for a single source (claude/codex/opencode)
 struct SourceCache {
-    entries: Vec<UsageEntry>,
+    entries_with_cost: Vec<UsageEntry>,
 }
 
 /// Native usage provider with per-source entry caching
@@ -124,19 +124,31 @@ impl NativeUsageProvider {
         }
     }
 
-    /// Pre-load all source data and pricing. Call once before executing cells.
+    /// Pre-load all source data, pricing, and costs. Call once before executing cells.
     pub async fn preload(&self) {
+        let start = std::time::Instant::now();
+
         self.pricing_cache.ensure_loaded().await;
+        tracing::info!("pricing preload: {:?}", start.elapsed());
 
         let mut cache = self.source_cache.write().await;
         for adapter in &self.adapters {
             let source = adapter.source();
-            let entries = match adapter.find_data_paths() {
+            let adapter_start = std::time::Instant::now();
+            let raw_entries = match adapter.find_data_paths() {
                 Ok(paths) => adapter.load_entries(&paths).unwrap_or_default(),
                 Err(_) => Vec::new(),
             };
-            cache.insert(source, SourceCache { entries });
+            let entry_count = raw_entries.len();
+
+            let entries_with_cost = self.calculate_costs_sync(raw_entries);
+
+            tracing::info!("{:?} adapter: {} entries loaded + costs calculated, {:?}", source, entry_count, adapter_start.elapsed());
+            cache.insert(source, SourceCache { entries_with_cost });
         }
+
+        tracing::info!("total preload: {:?}, {} total entries", start.elapsed(),
+            cache.values().map(|c| c.entries_with_cost.len()).sum::<usize>());
     }
 
     /// Check if a source has any data without loading files
@@ -152,28 +164,20 @@ impl NativeUsageProvider {
     }
 
     pub async fn execute_cell(&self, cell: Cell) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let entries = if cell.source == Source::All {
+        let entries_with_cost = if cell.source == Source::All {
             let cache = self.source_cache.read().await;
-            let mut all_entries = Vec::new();
-            for (_, cached) in cache.iter() {
-                all_entries.extend(cached.entries.clone());
+            let mut all = Vec::new();
+            for cached in cache.values() {
+                all.extend(cached.entries_with_cost.clone());
             }
-            all_entries
+            all
         } else {
-            let adapter = self.find_adapter(cell.source)?;
             let cache = self.source_cache.read().await;
             match cache.get(&cell.source) {
-                Some(cached) => cached.entries.clone(),
-                None => {
-                    let paths = adapter.find_data_paths()
-                        .map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())) as Box<dyn std::error::Error + Send + Sync>)?;
-                    adapter.load_entries(&paths)
-                        .map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())) as Box<dyn std::error::Error + Send + Sync>)?
-                }
+                Some(cached) => cached.entries_with_cost.clone(),
+                None => Vec::new(),
             }
         };
-
-        let entries_with_cost = self.calculate_costs(entries).await?;
 
         let any_adapter = self.adapters.first()
             .ok_or("No adapters available")?;
@@ -252,7 +256,10 @@ impl NativeUsageProvider {
             .ok_or_else(|| format!("No adapter found for source: {:?}", source).into())
     }
 
-    async fn calculate_costs(&self, entries: Vec<UsageEntry>) -> Result<Vec<UsageEntry>, Box<dyn std::error::Error + Send + Sync>> {
+    /// Calculate costs synchronously using a snapshot of the pricing map.
+    /// Called once during preload so all cells reuse pre-computed costs.
+    fn calculate_costs_sync(&self, entries: Vec<UsageEntry>) -> Vec<UsageEntry> {
+        let pricing_snapshot = self.pricing_cache.get_snapshot_sync();
         let mut result = Vec::with_capacity(entries.len());
 
         for entry in entries {
@@ -260,20 +267,21 @@ impl NativeUsageProvider {
                 existing
             } else {
                 let model = entry.model.as_deref().unwrap_or("");
-                if let Some(pricing) = self.pricing_cache.get_pricing(model).await {
-                    calculate_cost(
-                        entry.model.as_deref(),
-                        entry.input_tokens,
-                        entry.output_tokens,
-                        entry.cache_creation_tokens,
-                        entry.cache_read_tokens,
-                        None,
-                        CostMode::Calculate,
-                        Some(&pricing),
-                    )
-                } else {
-                    0.0
-                }
+                pricing_snapshot
+                    .find(model)
+                    .map(|pricing| {
+                        calculate_cost(
+                            entry.model.as_deref(),
+                            entry.input_tokens,
+                            entry.output_tokens,
+                            entry.cache_creation_tokens,
+                            entry.cache_read_tokens,
+                            None,
+                            CostMode::Calculate,
+                            Some(&pricing),
+                        )
+                    })
+                    .unwrap_or(0.0)
             };
 
             result.push(UsageEntry {
@@ -282,7 +290,7 @@ impl NativeUsageProvider {
             });
         }
 
-        Ok(result)
+        result
     }
 }
 
@@ -330,15 +338,15 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn test_calculate_costs_uses_existing_cost() {
+    #[test]
+    fn test_calculate_costs_sync_uses_existing_cost() {
         let provider = NativeUsageProvider::new();
         let entries = vec![UsageEntry {
             cost_usd: Some(0.05),
             ..mock_entry("test", 100, 200)
         }];
 
-        let result = provider.calculate_costs(entries).await.unwrap();
+        let result = provider.calculate_costs_sync(entries);
         assert_eq!(result[0].cost_usd, Some(0.05));
     }
 
