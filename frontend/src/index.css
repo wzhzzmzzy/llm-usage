@@ -40,10 +40,6 @@
   --sidebar-ring: oklch(0.708 0 0);
 }
 
-* {
-  border-color: hsl(var(--border));
-}
-
 body {
   margin: 0;
   background-color: hsl(var(--background));

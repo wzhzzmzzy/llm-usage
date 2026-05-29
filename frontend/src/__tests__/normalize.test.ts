@@ -235,7 +235,7 @@ describe('table data safety', () => {
 
   it('should handle empty modelsUsed', () => {
     const models: string[] | undefined = undefined;
-    const safeModels = models && models.length > 0 ? models.join(', ') : '-';
+    const safeModels = models != null && (models as string[]).length > 0 ? (models as string[]).join(', ') : '-';
     expect(safeModels).toBe('-');
   });
 });

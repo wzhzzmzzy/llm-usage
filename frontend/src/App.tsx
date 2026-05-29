@@ -97,16 +97,12 @@ function SourceCombobox({
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          className="w-[180px] justify-between"
-        >
-          {SOURCES.find((s) => s.value === value)?.label ?? 'Select source'}
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-        </Button>
+      <PopoverTrigger
+        className="inline-flex items-center justify-between rounded-md border bg-background px-3 py-2 text-sm hover:bg-muted"
+        onClick={() => setOpen(!open)}
+      >
+        {SOURCES.find((s) => s.value === value)?.label ?? 'Select source'}
+        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
       </PopoverTrigger>
       <PopoverContent className="w-[180px] p-0">
         <Command>

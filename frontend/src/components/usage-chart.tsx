@@ -15,15 +15,6 @@ interface UsageChartProps {
   type: 'daily' | 'monthly' | 'session' | 'blocks';
 }
 
-function toChartData(data: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number }[]) {
-  return data.map((row, i) => ({
-    index: i,
-    input: row.inputTokens ?? 0,
-    output: row.outputTokens ?? 0,
-    cache: row.cacheReadTokens ?? 0,
-  }));
-}
-
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload) return null;
   return (
