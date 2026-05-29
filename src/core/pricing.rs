@@ -68,6 +68,24 @@ impl PricingCache {
         })
     }
 
+    pub async fn ensure_loaded(&self) {
+        {
+            let pricing = self.pricing.read().await;
+            if pricing.is_loaded() {
+                return;
+            }
+        }
+
+        if self.load_from_cache().await.is_ok() {
+            let pricing = self.pricing.read().await;
+            if pricing.is_loaded() {
+                return;
+            }
+        }
+
+        let _ = self.fetch_and_cache().await;
+    }
+
     /// Get pricing for a model, fetching from LiteLLM if needed
     pub async fn get_pricing(&self, model: &str) -> Option<Pricing> {
         let pricing = self.pricing.read().await;
@@ -227,6 +245,10 @@ impl PricingMap {
                 })
                 .map(|(_, pricing)| *pricing)
         })
+    }
+
+    pub fn is_loaded(&self) -> bool {
+        !self.entries.is_empty()
     }
 
     /// Get context limit for a model

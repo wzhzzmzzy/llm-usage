@@ -4,7 +4,7 @@ pub mod opencode;
 
 use std::path::PathBuf;
 
-use crate::core::model::{Source, UsageMetric};
+use crate::core::model::Source;
 
 /// Common types for all adapters
 #[derive(Debug, Clone)]

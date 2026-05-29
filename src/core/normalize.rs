@@ -295,4 +295,146 @@ mod tests {
         assert_eq!(report.days[0].output_tokens, 500);
         assert!(report.days[0].cost_usd_number > 0.0);
     }
+
+    #[test]
+    fn test_daily_report_json_matches_frontend_types() {
+        let rows = vec![RawDailyRow {
+            period: "2026-05-29".to_string(),
+            input_tokens: 1000,
+            output_tokens: 500,
+            cache_creation_tokens: Some(100),
+            cache_read_tokens: Some(200),
+            total_cost: 0.05,
+            total_tokens: Some(1500),
+            request_count: None,
+            models_used: Some(vec!["claude-sonnet-4".to_string()]),
+        }];
+
+        let report = Normalizer::normalize_daily(&rows).unwrap();
+        let json = serde_json::to_value(&report).unwrap();
+
+        assert!(json.get("days").is_some(), "Missing 'days' field");
+        assert!(json.get("totals").is_some(), "Missing 'totals' field");
+
+        let day = &json["days"][0];
+        assert!(day.get("date").is_some(), "Missing day.date");
+        assert!(day.get("costUsd").is_some(), "Missing day.costUsd");
+        assert!(day.get("costUsdNumber").is_some(), "Missing day.costUsdNumber");
+        assert!(day.get("costFormatted").is_some(), "Missing day.costFormatted");
+        assert!(day.get("totalTokens").is_some(), "Missing day.totalTokens");
+        assert!(day.get("inputTokens").is_some(), "Missing day.inputTokens");
+        assert!(day.get("outputTokens").is_some(), "Missing day.outputTokens");
+        assert!(day.get("cacheCreationTokens").is_some(), "Missing day.cacheCreationTokens");
+        assert!(day.get("cacheReadTokens").is_some(), "Missing day.cacheReadTokens");
+
+        let totals = &json["totals"];
+        assert!(totals.get("totalCostUsd").is_some(), "Missing totals.totalCostUsd");
+        assert!(totals.get("totalCostUsdNumber").is_some(), "Missing totals.totalCostUsdNumber");
+        assert!(totals.get("costFormatted").is_some(), "Missing totals.costFormatted");
+        assert!(totals.get("totalTokens").is_some(), "Missing totals.totalTokens");
+        assert!(totals.get("inputTokens").is_some(), "Missing totals.inputTokens");
+        assert!(totals.get("outputTokens").is_some(), "Missing totals.outputTokens");
+    }
+
+    #[test]
+    fn test_monthly_report_json_matches_frontend_types() {
+        let rows = vec![RawMonthlyRow {
+            period: "2026-05".to_string(),
+            input_tokens: 5000,
+            output_tokens: 2500,
+            cache_creation_tokens: Some(500),
+            cache_read_tokens: Some(1000),
+            total_cost: 0.25,
+            total_tokens: Some(7500),
+            request_count: None,
+            models_used: Some(vec!["claude-sonnet-4".to_string()]),
+        }];
+
+        let report = Normalizer::normalize_monthly(&rows).unwrap();
+        let json = serde_json::to_value(&report).unwrap();
+
+        assert!(json.get("months").is_some(), "Missing 'months' field");
+        assert!(json.get("totals").is_some(), "Missing 'totals' field");
+
+        let month = &json["months"][0];
+        assert!(month.get("month").is_some(), "Missing month.month");
+        assert!(month.get("costUsd").is_some(), "Missing month.costUsd");
+        assert!(month.get("totalTokens").is_some(), "Missing month.totalTokens");
+    }
+
+    #[test]
+    fn test_session_report_json_matches_frontend_types() {
+        let rows = vec![RawSessionRow {
+            session_id: "abc123".to_string(),
+            project_path: Some("/home/user/project".to_string()),
+            input_tokens: 1000,
+            output_tokens: 500,
+            total_tokens: Some(1500),
+            total_cost: 0.05,
+            last_activity: Some("2026-05-29".to_string()),
+            models_used: Some(vec!["claude-sonnet-4".to_string()]),
+        }];
+
+        let report = Normalizer::normalize_session(&rows).unwrap();
+        let json = serde_json::to_value(&report).unwrap();
+
+        assert!(json.get("sessions").is_some(), "Missing 'sessions' field");
+
+        let session = &json["sessions"][0];
+        assert!(session.get("sessionId").is_some(), "Missing session.sessionId");
+        assert!(session.get("projectPath").is_some(), "Missing session.projectPath");
+        assert!(session.get("costUsd").is_some(), "Missing session.costUsd");
+        assert!(session.get("costUsdNumber").is_some(), "Missing session.costUsdNumber");
+        assert!(session.get("totalTokens").is_some(), "Missing session.totalTokens");
+        assert!(session.get("inputTokens").is_some(), "Missing session.inputTokens");
+        assert!(session.get("outputTokens").is_some(), "Missing session.outputTokens");
+        assert!(session.get("lastActivity").is_some(), "Missing session.lastActivity");
+        assert!(session.get("modelsUsed").is_some(), "Missing session.modelsUsed");
+    }
+
+    #[test]
+    fn test_blocks_report_json_matches_frontend_types() {
+        let rows = vec![RawBlockRow {
+            block_id: "block-1".to_string(),
+            start_time: "2026-05-29T10:00:00Z".to_string(),
+            end_time: Some("2026-05-29T11:00:00Z".to_string()),
+            is_active: false,
+            is_gap: None,
+            input_tokens: 1000,
+            output_tokens: 500,
+            total_tokens: Some(1500),
+            cost_usd: Some(0.05),
+            models_used: Some(vec!["claude-sonnet-4".to_string()]),
+        }];
+
+        let report = Normalizer::normalize_blocks(&rows).unwrap();
+        let json = serde_json::to_value(&report).unwrap();
+
+        assert!(json.get("blocks").is_some(), "Missing 'blocks' field");
+
+        let block = &json["blocks"][0];
+        assert!(block.get("blockId").is_some(), "Missing block.blockId");
+        assert!(block.get("startTime").is_some(), "Missing block.startTime");
+        assert!(block.get("endTime").is_some(), "Missing block.endTime");
+        assert!(block.get("costUsd").is_some(), "Missing block.costUsd");
+        assert!(block.get("totalTokens").is_some(), "Missing block.totalTokens");
+        assert!(block.get("isActive").is_some(), "Missing block.isActive");
+    }
+
+    #[test]
+    fn test_snapshot_json_matches_frontend_types() {
+        let snapshot = Snapshot::default();
+        let json = serde_json::to_value(&snapshot).unwrap();
+
+        assert!(json.get("status").is_some());
+        assert!(json.get("lastRefresh").is_some());
+        assert!(json.get("lastSuccess").is_some());
+        assert!(json.get("lastError").is_some());
+        assert!(json.get("cells").is_some());
+        assert!(json.get("daily").is_some());
+        assert!(json.get("monthly").is_some());
+        assert!(json.get("session").is_some());
+        assert!(json.get("blocks").is_some());
+        assert!(json.get("timezone").is_some());
+    }
 }

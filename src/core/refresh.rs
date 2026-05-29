@@ -5,22 +5,20 @@ use tokio::time::{timeout, Duration};
 use crate::config::AppConfig;
 use crate::core::error::RefreshError;
 use crate::core::model::*;
-use crate::core::provider::{NativeUsageProvider, ProviderHealth, RawBlockRow, RawDailyRow, RawMonthlyRow, RawSessionRow, UsageProvider};
+use crate::core::provider::{NativeUsageProvider, RawBlockRow, RawDailyRow, RawMonthlyRow, RawSessionRow};
 
 pub const MAX_CONCURRENT_COMMANDS: usize = 8;
 pub const COMMAND_TIMEOUT_SECS: u64 = 15;
 pub const REFRESH_TIMEOUT_SECS: u64 = 60;
 
 pub struct RefreshManager {
-    config: AppConfig,
-    provider: Arc<dyn UsageProvider>,
+    provider: Arc<NativeUsageProvider>,
     snapshot: Arc<Mutex<Snapshot>>,
 }
 
 impl RefreshManager {
-    pub fn new(config: AppConfig) -> Self {
+    pub fn new(_config: AppConfig) -> Self {
         Self {
-            config,
             provider: Arc::new(NativeUsageProvider::new()),
             snapshot: Arc::new(Mutex::new(Snapshot::default())),
         }
@@ -35,7 +33,20 @@ impl RefreshManager {
     }
 
     async fn execute_refresh(&self) -> Result<RefreshResponse, RefreshError> {
-        let cells = Cell::all_cells();
+        self.provider.preload().await;
+
+        let cells = self.plan_cells();
+        if cells.is_empty() {
+            let mut snapshot = self.snapshot.lock().await.clone();
+            snapshot.status = SnapshotStatus::NoData;
+            snapshot.last_refresh = Some(chrono::Utc::now());
+            *self.snapshot.lock().await = snapshot.clone();
+            return Ok(RefreshResponse {
+                status: SnapshotStatus::NoData,
+                snapshot,
+            });
+        }
+
         let semaphore = Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_COMMANDS));
         let mut handles = Vec::new();
 
@@ -122,6 +133,35 @@ impl RefreshManager {
             status,
             snapshot,
         })
+    }
+
+    /// Plan which cells to execute. Skip sources with no data directories.
+    fn plan_cells(&self) -> Vec<Cell> {
+        let mut cells = Vec::new();
+        let mut has_any_source = false;
+
+        for source in [Source::Claude, Source::Codex, Source::Opencode] {
+            if self.provider.source_has_data(source) {
+                has_any_source = true;
+                for report in ReportType::all_variants() {
+                    cells.push(Cell {
+                        source,
+                        report: *report,
+                    });
+                }
+            }
+        }
+
+        if has_any_source {
+            for report in ReportType::all_variants() {
+                cells.push(Cell {
+                    source: Source::All,
+                    report: *report,
+                });
+            }
+        }
+
+        cells
     }
 
     fn process_cell(
