@@ -38,39 +38,39 @@ export function UsageChart({ data, type }: UsageChartProps) {
     );
   }
 
-  let chartData: { name: string; input: number; output: number; cache: number }[] = [];
+  let chartData: { name: string; input: number; cache: number; output: number }[] = [];
 
   switch (type) {
     case 'daily':
-      chartData = (data as DailyRow[]).map((row) => ({
+      chartData = (data as DailyRow[]).slice().reverse().map((row) => ({
         name: row.date,
         input: row.inputTokens ?? 0,
-        output: row.outputTokens ?? 0,
         cache: row.cacheReadTokens ?? 0,
+        output: row.outputTokens ?? 0,
       }));
       break;
     case 'monthly':
-      chartData = (data as MonthlyRow[]).map((row) => ({
+      chartData = (data as MonthlyRow[]).slice().reverse().map((row) => ({
         name: row.month,
         input: row.inputTokens ?? 0,
-        output: row.outputTokens ?? 0,
         cache: row.cacheReadTokens ?? 0,
+        output: row.outputTokens ?? 0,
       }));
       break;
     case 'session':
-      chartData = (data as SessionRow[]).map((row) => ({
+      chartData = (data as SessionRow[]).slice().reverse().map((row) => ({
         name: row.sessionId.slice(0, 8),
         input: row.inputTokens ?? 0,
-        output: row.outputTokens ?? 0,
         cache: row.cacheReadTokens ?? 0,
+        output: row.outputTokens ?? 0,
       }));
       break;
     case 'blocks':
-      chartData = (data as BlockRow[]).map((row) => ({
+      chartData = (data as BlockRow[]).slice().reverse().map((row) => ({
         name: row.blockId.slice(0, 8),
         input: 0,
-        output: 0,
         cache: 0,
+        output: 0,
       }));
       break;
   }
@@ -98,22 +98,22 @@ export function UsageChart({ data, type }: UsageChartProps) {
         <Bar
           dataKey="input"
           name="Input"
-          stackId="a"
-          fill="hsl(var(--chart-1, 222 47% 45%))"
-          radius={[0, 0, 0, 0]}
-        />
-        <Bar
-          dataKey="output"
-          name="Output"
-          stackId="a"
-          fill="hsl(var(--chart-2, 160 60% 45%))"
+          stackId="tokens"
+          fill="var(--color-chart-1)"
           radius={[0, 0, 0, 0]}
         />
         <Bar
           dataKey="cache"
           name="Cache Hit"
-          stackId="a"
-          fill="hsl(var(--chart-3, 30 80% 55%))"
+          stackId="tokens"
+          fill="var(--color-chart-2)"
+          radius={[0, 0, 0, 0]}
+        />
+        <Bar
+          dataKey="output"
+          name="Output"
+          stackId="tokens"
+          fill="var(--color-chart-3)"
           radius={[4, 4, 0, 0]}
         />
       </BarChart>
