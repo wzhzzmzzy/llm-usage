@@ -80,13 +80,13 @@ Each source adapter knows how to read its tool's local data (e.g., Claude JSONL,
 
 ```bash
 # Frontend (Vite dev server)
-cd frontend && npm run dev
+cd frontend && pnpm dev
 
 # Backend (auto-reload)
 cargo watch -x run
 
 # Tests
-cd frontend && npm test
+cd frontend && pnpm test
 cargo test
 ```
 

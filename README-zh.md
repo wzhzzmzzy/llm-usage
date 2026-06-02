@@ -12,12 +12,12 @@
 
 ## 安装
 
-前置要求：Rust 1.75+、Node.js 20+
+前置要求：Rust 1.75+、Node.js 20+、[pnpm](https://pnpm.io/)
 
 ```bash
 git clone <repo-url>
 cd llm-usage
-cd frontend && npm install && npm run build && cd ..
+cd frontend && pnpm install && pnpm build && cd ..
 cargo build --release
 ```
 
@@ -80,13 +80,13 @@ llm-usage
 
 ```bash
 # 前端（Vite 开发服务器）
-cd frontend && npm run dev
+cd frontend && pnpm dev
 
 # 后端（自动重载）
 cargo watch -x run
 
 # 测试
-cd frontend && npm test
+cd frontend && pnpm test
 cargo test
 ```
 
