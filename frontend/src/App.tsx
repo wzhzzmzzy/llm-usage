@@ -22,7 +22,7 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
-import { Check, ChevronsUpDown, RefreshCw, BarChart3, Table } from 'lucide-react';
+import { Check, ChevronsUpDown, RefreshCw, BarChart3, Table, Layers, Users } from 'lucide-react';
 
 let tauriInvoke: ((cmd: string, args?: Record<string, unknown>) => Promise<any>) | null = null;
 
@@ -166,6 +166,7 @@ function App() {
   const [source, setSource] = useState<Source>('all');
   const [tab, setTab] = useState<ReportType>('daily');
   const [view, setView] = useState<'table' | 'chart'>('table');
+  const [segmentMode, setSegmentMode] = useState<'token-type' | 'agent-source'>('token-type');
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const hasRefreshed = useRef(false);
   const pollIntervalRef = useRef<number | null>(null);
@@ -306,21 +307,46 @@ function App() {
             </TabsList>
           </Tabs>
 
-          <div className="flex items-center gap-1 ml-auto">
-            <Button
-              variant={view === 'table' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setView('table')}
-            >
-              <Table className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={view === 'chart' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setView('chart')}
-            >
-              <BarChart3 className="h-4 w-4" />
-            </Button>
+          <div className="flex items-center gap-2 ml-auto">
+            {view === 'chart' && (
+              <div className="flex items-center gap-1 border rounded-md p-1">
+                <Button
+                  variant={segmentMode === 'token-type' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setSegmentMode('token-type')}
+                  className="h-7 px-2 text-xs"
+                >
+                  <Layers className="h-3 w-3 mr-1" />
+                  Token Type
+                </Button>
+                <Button
+                  variant={segmentMode === 'agent-source' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setSegmentMode('agent-source')}
+                  className="h-7 px-2 text-xs"
+                  disabled={source !== 'all'}
+                >
+                  <Users className="h-3 w-3 mr-1" />
+                  Agent Source
+                </Button>
+              </div>
+            )}
+            <div className="flex items-center gap-1">
+              <Button
+                variant={view === 'table' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setView('table')}
+              >
+                <Table className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={view === 'chart' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setView('chart')}
+              >
+                <BarChart3 className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -360,7 +386,12 @@ function App() {
             {view === 'table' ? (
               <UsageTable data={tableData} type={tab} snapshot={snapshot ?? undefined} source={source} />
             ) : (
-              <UsageChart data={tableData} type={tab} />
+              <UsageChart
+                data={tableData}
+                type={tab}
+                snapshot={snapshot ?? undefined}
+                segmentMode={source === 'all' ? segmentMode : 'token-type'}
+              />
             )}
           </CardContent>
         </Card>
