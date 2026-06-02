@@ -12,12 +12,12 @@ Multiple AI coding assistants, multiple usage trackers, no unified view. This to
 
 ## Install
 
-Requires: Rust 1.75+, Node.js 20+
+Requires: Rust 1.75+, Node.js 20+, [pnpm](https://pnpm.io/)
 
 ```bash
 git clone <repo-url>
 cd llm-usage
-cd frontend && npm install && npm run build && cd ..
+cd frontend && pnpm install && pnpm build && cd ..
 cargo build --release
 ```
 
