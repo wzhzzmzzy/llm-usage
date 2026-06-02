@@ -74,11 +74,7 @@ llm-usage
 └── frontend/           # React + Recharts dashboard
 ```
 
-Each source adapter knows how to read its tool's local data (e.g., ccusage JSON, opencode SQLite). The refresh manager runs all adapters, normalizes the output, and serves it via the HTTP API. The frontend polls this API.
-
-## Runtime Dependencies
-
-- [ccusage](https://github.com/anthropics/ccusage) - Used via `bunx` to fetch Claude token usage data. Install with `npm i -g ccusage` or let `bunx` handle it automatically.
+Each source adapter knows how to read its tool's local data (e.g., Claude JSONL, opencode SQLite). The refresh manager runs all adapters, normalizes the output, and serves it via the HTTP API. The frontend polls this API.
 
 ## Dev
 
