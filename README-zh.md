@@ -12,7 +12,9 @@
 
 ## 安装
 
-前置要求：Rust 1.75+、Node.js 20+、[pnpm](https://pnpm.io/)
+可在 [Releases](../../releases) 页面下载预编译的二进制包（支持 Linux、macOS、Windows）。
+
+或从源码构建（需要 Rust 1.75+、Node.js 20+、[pnpm](https://pnpm.io/)）：
 
 ```bash
 git clone <repo-url>

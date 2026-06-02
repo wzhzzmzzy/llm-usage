@@ -12,7 +12,9 @@ Multiple AI coding assistants, multiple usage trackers, no unified view. This to
 
 ## Install
 
-Requires: Rust 1.75+, Node.js 20+, [pnpm](https://pnpm.io/)
+Pre-built binaries for Linux, macOS, and Windows are available on the [Releases](../../releases) page.
+
+Or build from source (requires Rust 1.75+, Node.js 20+, [pnpm](https://pnpm.io/)):
 
 ```bash
 git clone <repo-url>
