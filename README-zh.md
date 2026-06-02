@@ -12,7 +12,7 @@
 
 ## 安装
 
-前置要求：Rust 1.75+、Node.js 20+、[ccusage](https://github.com/anthropics/ccusage)
+前置要求：Rust 1.75+、Node.js 20+
 
 ```bash
 git clone <repo-url>
@@ -75,6 +75,10 @@ llm-usage
 ```
 
 每个数据源适配器负责读取对应工具的本地数据（如 ccusage JSON、opencode SQLite）。刷新管理器运行所有适配器，标准化输出，通过 HTTP API 提供服务。前端轮询此 API。
+
+## 运行时依赖
+
+- [ccusage](https://github.com/anthropics/ccusage) - 通过 `bunx` 调用，用于获取 Claude token 用量数据。可通过 `npm i -g ccusage` 安装，或让 `bunx` 自动处理。
 
 ## 开发
 
