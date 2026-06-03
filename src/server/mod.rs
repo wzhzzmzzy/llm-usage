@@ -12,11 +12,13 @@ use tower_http::cors::CorsLayer;
 mod embedded;
 
 use llm_usage::core::model::{HealthResponse, Snapshot};
+use llm_usage::core::pricing::PricingCache;
 use llm_usage::core::refresh::{RefreshManager, RefreshStatus};
 
 #[derive(Clone)]
 pub struct AppState {
     pub refresh_manager: Arc<RefreshManager>,
+    pub pricing_cache: Arc<PricingCache>,
 }
 
 pub fn create_router(state: AppState) -> Router {
@@ -25,6 +27,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/refresh", post(refresh))
         .route("/api/refresh-status", get(refresh_status))
         .route("/api/snapshot", get(get_snapshot))
+        .route("/api/pricing", get(get_pricing))
         .layer(CorsLayer::permissive())
         .with_state(state)
 }
@@ -36,6 +39,7 @@ pub fn create_router_with_frontend(state: AppState) -> Router {
         .route("/api/refresh", post(refresh))
         .route("/api/refresh-status", get(refresh_status))
         .route("/api/snapshot", get(get_snapshot))
+        .route("/api/pricing", get(get_pricing))
         .with_state(state);
 
     Router::new()
@@ -53,6 +57,7 @@ pub fn create_router_with_frontend(state: AppState, frontend_path: &str) -> Rout
         .route("/api/refresh", post(refresh))
         .route("/api/refresh-status", get(refresh_status))
         .route("/api/snapshot", get(get_snapshot))
+        .route("/api/pricing", get(get_pricing))
         .with_state(state);
 
     Router::new()
@@ -83,4 +88,10 @@ async fn refresh_status(State(state): State<AppState>) -> Json<RefreshStatus> {
 async fn get_snapshot(State(state): State<AppState>) -> Json<Snapshot> {
     let snapshot = state.refresh_manager.get_snapshot().await;
     Json(snapshot)
+}
+
+async fn get_pricing(State(state): State<AppState>) -> Json<serde_json::Value> {
+    state.pricing_cache.ensure_loaded().await;
+    let pricing_map = state.pricing_cache.get_snapshot_sync();
+    Json(pricing_map.to_json())
 }

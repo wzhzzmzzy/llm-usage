@@ -8,13 +8,14 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import type { DailyRow, MonthlyRow, SessionRow, BlockRow, Snapshot } from '../api/types';
+import type { DailyRow, MonthlyRow, SessionRow, BlockRow, Snapshot, PricingMap, ModelBreakdown } from '../api/types';
 
 interface UsageChartProps {
   data: DailyRow[] | MonthlyRow[] | SessionRow[] | BlockRow[];
   type: 'daily' | 'monthly' | 'session' | 'blocks';
   snapshot?: Snapshot;
   segmentMode?: 'token-type' | 'agent-source';
+  pricing?: PricingMap | null;
 }
 
 type AgentSourceKey = 'claude' | 'codex' | 'gemini' | 'opencode';
@@ -26,16 +27,59 @@ const AGENT_SOURCES: { key: AgentSourceKey; label: string; color: string }[] = [
   { key: 'opencode', label: 'OpenCode', color: 'var(--color-chart-4)' },
 ];
 
+const DEFAULT_PRICING = { input: 3e-6, output: 15e-6, cacheCreate: 3.75e-6, cacheRead: 0.3e-6 };
+
+function findModelPricing(model: string, pricing: PricingMap | null | undefined) {
+  if (!pricing) return DEFAULT_PRICING;
+  if (pricing[model]) return pricing[model];
+  const normalized = model.replace(/[.@]/g, '-');
+  for (const [key, value] of Object.entries(pricing)) {
+    if (key.includes(model) || model.includes(key) || key.includes(normalized) || normalized.includes(key)) {
+      return value;
+    }
+  }
+  return DEFAULT_PRICING;
+}
+
+function fmtCost(n: number): string {
+  if (n === 0) return '$0';
+  if (n < 0.01) return `$${n.toFixed(4)}`;
+  if (n < 1) return `$${n.toFixed(3)}`;
+  return `$${n.toFixed(2)}`;
+}
+
+function estimateRowCost(
+  inputTokens: number,
+  outputTokens: number,
+  cacheReadTokens: number,
+  modelBreakdown?: ModelBreakdown[] | null,
+  pricing?: PricingMap | null,
+): number {
+  if (modelBreakdown && modelBreakdown.length > 0) {
+    return modelBreakdown.reduce((total, mb) => {
+      const p = findModelPricing(mb.model, pricing);
+      return total + mb.inputTokens * p.input + mb.outputTokens * p.output + mb.cacheReadTokens * p.cacheRead;
+    }, 0);
+  }
+  return inputTokens * DEFAULT_PRICING.input + outputTokens * DEFAULT_PRICING.output + cacheReadTokens * DEFAULT_PRICING.cacheRead;
+}
+
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload) return null;
+  const costEntry = payload.find((e: any) => e.dataKey === 'cost');
   return (
     <div className="rounded-lg border bg-background p-3 shadow-sm">
       <p className="mb-2 font-medium">{label}</p>
-      {payload.map((entry: any) => (
+      {payload.filter((e: any) => e.dataKey !== 'cost').map((entry: any) => (
         <p key={entry.name} className="text-sm" style={{ color: entry.color }}>
           {entry.name}: {entry.value.toLocaleString()}
         </p>
       ))}
+      {costEntry && (
+        <p className="text-sm font-medium mt-1 pt-1 border-t">
+          Est. Cost: {fmtCost(costEntry.value)}
+        </p>
+      )}
     </div>
   );
 }
@@ -52,8 +96,9 @@ function formatBlockLabel(isoString: string): string {
 
 function getChartDataByTokenType(
   data: DailyRow[] | MonthlyRow[] | SessionRow[] | BlockRow[],
-  type: string
-): { name: string; input: number; cache: number; output: number }[] {
+  type: string,
+  pricing?: PricingMap | null,
+): { name: string; input: number; cache: number; output: number; cost: number }[] {
   switch (type) {
     case 'daily':
       return (data as DailyRow[]).slice().reverse().map((row) => ({
@@ -61,6 +106,7 @@ function getChartDataByTokenType(
         input: row.inputTokens ?? 0,
         cache: row.cacheReadTokens ?? 0,
         output: row.outputTokens ?? 0,
+        cost: estimateRowCost(row.inputTokens ?? 0, row.outputTokens ?? 0, row.cacheReadTokens ?? 0, row.modelBreakdown, pricing),
       }));
     case 'monthly':
       return (data as MonthlyRow[]).slice().reverse().map((row) => ({
@@ -68,6 +114,7 @@ function getChartDataByTokenType(
         input: row.inputTokens ?? 0,
         cache: row.cacheReadTokens ?? 0,
         output: row.outputTokens ?? 0,
+        cost: estimateRowCost(row.inputTokens ?? 0, row.outputTokens ?? 0, row.cacheReadTokens ?? 0, row.modelBreakdown, pricing),
       }));
     case 'session':
       return (data as SessionRow[]).slice().reverse().map((row) => ({
@@ -75,6 +122,7 @@ function getChartDataByTokenType(
         input: row.inputTokens ?? 0,
         cache: row.cacheReadTokens ?? 0,
         output: row.outputTokens ?? 0,
+        cost: estimateRowCost(row.inputTokens ?? 0, row.outputTokens ?? 0, row.cacheReadTokens ?? 0, row.modelBreakdown, pricing),
       }));
     case 'blocks':
       return (data as BlockRow[]).slice().reverse().map((row) => ({
@@ -82,6 +130,7 @@ function getChartDataByTokenType(
         input: row.inputTokens ?? 0,
         cache: row.cacheReadTokens ?? 0,
         output: row.outputTokens ?? 0,
+        cost: estimateRowCost(row.inputTokens ?? 0, row.outputTokens ?? 0, row.cacheReadTokens ?? 0, null, pricing),
       }));
     default:
       return [];
@@ -173,7 +222,7 @@ function getChartDataByAgentSource(
   }
 }
 
-export function UsageChart({ data, type, snapshot, segmentMode = 'token-type' }: UsageChartProps) {
+export function UsageChart({ data, type, snapshot, segmentMode = 'token-type', pricing }: UsageChartProps) {
   if (data.length === 0) {
     return (
       <div className="flex h-[300px] items-center justify-center text-muted-foreground">
@@ -186,7 +235,7 @@ export function UsageChart({ data, type, snapshot, segmentMode = 'token-type' }:
 
   const chartData = isAgentSourceMode
     ? getChartDataByAgentSource(snapshot, type)
-    : getChartDataByTokenType(data, type);
+    : getChartDataByTokenType(data, type, pricing);
 
   if (chartData.length === 0) {
     return (
@@ -233,7 +282,7 @@ export function UsageChart({ data, type, snapshot, segmentMode = 'token-type' }:
     );
   }
 
-  const tokenData = chartData as { name: string; input: number; cache: number; output: number }[];
+  const tokenData = chartData as { name: string; input: number; cache: number; output: number; cost: number }[];
   return (
     <ResponsiveContainer width="100%" height={350}>
       <BarChart data={tokenData}>
@@ -275,6 +324,7 @@ export function UsageChart({ data, type, snapshot, segmentMode = 'token-type' }:
           fill="var(--color-chart-3)"
           radius={[4, 4, 0, 0]}
         />
+        <Bar dataKey="cost" name="Est. Cost" hide />
       </BarChart>
     </ResponsiveContainer>
   );

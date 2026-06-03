@@ -139,9 +139,19 @@ export interface RefreshStatus {
   snapshotStatus: SnapshotStatus;
 }
 
+export interface ModelPricing {
+  input: number;
+  output: number;
+  cacheCreate: number;
+  cacheRead: number;
+}
+
+export type PricingMap = Record<string, ModelPricing>;
+
 export interface UsageApi {
   health(): Promise<HealthResponse>;
   refresh(): Promise<RefreshStatus>;
   refreshStatus(): Promise<RefreshStatus>;
   getSnapshot(): Promise<Snapshot>;
+  getPricing(): Promise<PricingMap>;
 }

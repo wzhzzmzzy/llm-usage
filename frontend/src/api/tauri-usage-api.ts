@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/tauri';
-import type { HealthResponse, RefreshStatus, Snapshot, UsageApi } from './types';
+import type { HealthResponse, PricingMap, RefreshStatus, Snapshot, UsageApi } from './types';
 
 export class TauriUsageApi implements UsageApi {
   async health(): Promise<HealthResponse> {
@@ -16,5 +16,9 @@ export class TauriUsageApi implements UsageApi {
 
   async getSnapshot(): Promise<Snapshot> {
     return invoke('get_snapshot');
+  }
+
+  async getPricing(): Promise<PricingMap> {
+    return invoke('get_pricing');
   }
 }

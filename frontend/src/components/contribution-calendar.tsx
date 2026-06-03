@@ -1,9 +1,10 @@
 import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
-import type { DailyReport } from '../api/types';
+import type { DailyReport, PricingMap, ModelBreakdown } from '../api/types';
 
 interface ContributionCalendarProps {
   data: Record<string, DailyReport>;
   onDayClick?: (date: string) => void;
+  pricing?: PricingMap | null;
 }
 
 interface DayData {
@@ -13,6 +14,7 @@ interface DayData {
   cacheReadTokens: number;
   outputTokens: number;
   models: string[];
+  modelBreakdown?: ModelBreakdown[];
 }
 
 interface TooltipState {
@@ -33,6 +35,40 @@ const COLORS = [
   '#216e39',
 ];
 
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+const DEFAULT_PRICING = { input: 3e-6, output: 15e-6, cacheCreate: 3.75e-6, cacheRead: 0.3e-6 };
+
+function findModelPricing(model: string, pricing: PricingMap | null | undefined) {
+  if (!pricing) return DEFAULT_PRICING;
+  if (pricing[model]) return pricing[model];
+  const normalized = model.replace(/[.@]/g, '-');
+  for (const [key, value] of Object.entries(pricing)) {
+    if (key.includes(model) || model.includes(key) || key.includes(normalized) || normalized.includes(key)) {
+      return value;
+    }
+  }
+  return DEFAULT_PRICING;
+}
+
+function fmtCost(n: number): string {
+  if (n === 0) return '$0';
+  if (n < 0.01) return `$${n.toFixed(4)}`;
+  if (n < 1) return `$${n.toFixed(3)}`;
+  return `$${n.toFixed(2)}`;
+}
+
+function estimateDayCost(day: DayData, pricing: PricingMap | null | undefined): number {
+  if (day.modelBreakdown && day.modelBreakdown.length > 0) {
+    return day.modelBreakdown.reduce((total, mb) => {
+      const p = findModelPricing(mb.model, pricing);
+      return total + mb.inputTokens * p.input + mb.outputTokens * p.output + mb.cacheReadTokens * p.cacheRead;
+    }, 0);
+  }
+  const p = DEFAULT_PRICING;
+  return day.inputTokens * p.input + day.outputTokens * p.output + day.cacheReadTokens * p.cacheRead;
+}
+
 function getIntensity(tokens: number): number {
   if (tokens === 0) return 0;
   if (tokens < 1_000_000) return 1;
@@ -41,7 +77,7 @@ function getIntensity(tokens: number): number {
   return 4;
 }
 
-export function ContributionCalendar({ data, onDayClick }: ContributionCalendarProps) {
+export function ContributionCalendar({ data, onDayClick, pricing }: ContributionCalendarProps) {
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties>({});
@@ -58,7 +94,7 @@ export function ContributionCalendar({ data, onDayClick }: ContributionCalendarP
     while (current <= today) {
       const dateStr = current.toISOString().split('T')[0];
       const report = Object.values(data).find(r =>
-        r.days?.some(d => d.date === dateStr)
+        r?.days?.some(d => d.date === dateStr)
       );
       const day = report?.days?.find(d => d.date === dateStr);
 
@@ -69,6 +105,7 @@ export function ContributionCalendar({ data, onDayClick }: ContributionCalendarP
         cacheReadTokens: day?.cacheReadTokens ?? 0,
         outputTokens: day?.outputTokens ?? 0,
         models: day?.modelsUsed ?? [],
+        modelBreakdown: day?.modelBreakdown,
       });
 
       if (week.length === 7) {
@@ -95,7 +132,7 @@ export function ContributionCalendar({ data, onDayClick }: ContributionCalendarP
       const month = firstDay.getMonth();
       if (month !== lastMonth) {
         result.push({
-          label: firstDay.toLocaleString('default', { month: 'short' }),
+          label: MONTH_LABELS[month],
           weekIndex: i,
         });
         lastMonth = month;
@@ -217,6 +254,7 @@ export function ContributionCalendar({ data, onDayClick }: ContributionCalendarP
             <div>Input: <span className="text-gray-900">{tooltip.day.inputTokens.toLocaleString()}</span></div>
             <div>Cache Hit: <span className="text-gray-900">{tooltip.day.cacheReadTokens.toLocaleString()}</span></div>
             <div>Output: <span className="text-gray-900">{tooltip.day.outputTokens.toLocaleString()}</span></div>
+            <div>Cost: <span className="text-gray-900 font-medium">{fmtCost(estimateDayCost(tooltip.day, pricing))}</span></div>
             {tooltip.day.models.length > 0 && (
               <div className="mt-1 pt-1 border-t border-gray-200">
                 {tooltip.day.models.slice(0, 3).map((m, i) => (

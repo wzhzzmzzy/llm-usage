@@ -1,4 +1,4 @@
-import type { HealthResponse, RefreshStatus, Snapshot, UsageApi } from './types';
+import type { HealthResponse, PricingMap, RefreshStatus, Snapshot, UsageApi } from './types';
 
 export class HttpUsageApi implements UsageApi {
   private baseUrl: string;
@@ -28,6 +28,12 @@ export class HttpUsageApi implements UsageApi {
   async getSnapshot(): Promise<Snapshot> {
     const res = await fetch(`${this.baseUrl}/api/snapshot`);
     if (!res.ok) throw new Error(`Get snapshot failed: ${res.status}`);
+    return res.json();
+  }
+
+  async getPricing(): Promise<PricingMap> {
+    const res = await fetch(`${this.baseUrl}/api/pricing`);
+    if (!res.ok) throw new Error(`Get pricing failed: ${res.status}`);
     return res.json();
   }
 }

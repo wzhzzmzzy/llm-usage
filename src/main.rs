@@ -7,6 +7,7 @@ use clap::Parser;
 use cli::{Cli, Commands};
 use llm_usage::config::AppConfig;
 use llm_usage::core as llm_core;
+use llm_usage::core::pricing::PricingCache;
 use std::sync::Arc;
 use tracing_subscriber::EnvFilter;
 
@@ -39,7 +40,8 @@ async fn main() -> anyhow::Result<()> {
             }
 
             let refresh_manager = Arc::new(llm_core::refresh::RefreshManager::new(config));
-            let state = server::AppState { refresh_manager };
+            let pricing_cache = Arc::new(PricingCache::new()?);
+            let state = server::AppState { refresh_manager, pricing_cache };
 
             #[cfg(feature = "web")]
             let router = server::create_router_with_frontend(state);

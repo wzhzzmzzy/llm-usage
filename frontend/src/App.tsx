@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HttpUsageApi } from './api/http-usage-api';
-import type { Snapshot, Source, ReportType, UsageApi, RefreshStatus } from './api/types';
+import type { Snapshot, Source, ReportType, UsageApi, RefreshStatus, PricingMap, ModelPricing } from './api/types';
 import { ContributionCalendar } from './components/contribution-calendar';
 import { UsageTable } from './components/usage-table';
 import { UsageChart } from './components/usage-chart';
@@ -61,6 +61,11 @@ function createApi(): UsageApi {
         if (!invoke) throw new Error('Tauri not available');
         return invoke('get_snapshot');
       },
+      async getPricing() {
+        const invoke = await getTauriInvoke();
+        if (!invoke) throw new Error('Tauri not available');
+        return invoke('get_pricing');
+      },
     };
   }
   return new HttpUsageApi();
@@ -85,6 +90,54 @@ const REPORT_TABS: { key: ReportType; label: string }[] = [
 
 function formatNumber(n: number | undefined): string {
   return (n ?? 0).toLocaleString();
+}
+
+function formatCost(n: number | undefined): string {
+  if (n === undefined || n === 0) return '$0.00';
+  if (n < 0.01) return `$${n.toFixed(4)}`;
+  if (n < 1) return `$${n.toFixed(3)}`;
+  return `$${n.toFixed(2)}`;
+}
+
+function estimateCost(
+  inputTokens: number,
+  outputTokens: number,
+  cacheReadTokens: number,
+  modelBreakdown: Array<{ model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number }> | undefined,
+  pricing: PricingMap | null
+): { cost: number; matched: boolean } {
+  const defaultPricing: ModelPricing = { input: 3e-6, output: 15e-6, cacheCreate: 3.75e-6, cacheRead: 0.3e-6 };
+
+  const findPricing = (model: string): { pricing: ModelPricing; matched: boolean } => {
+    if (!pricing) return { pricing: defaultPricing, matched: false };
+    if (pricing[model]) return { pricing: pricing[model], matched: true };
+    const normalized = model.replace(/[.@]/g, '-');
+    for (const [key, value] of Object.entries(pricing)) {
+      if (key.includes(model) || model.includes(key) || key.includes(normalized) || normalized.includes(key)) {
+        return { pricing: value, matched: true };
+      }
+    }
+    return { pricing: defaultPricing, matched: false };
+  };
+
+  if (modelBreakdown && modelBreakdown.length > 0) {
+    let anyMatched = false;
+    const cost = modelBreakdown.reduce((total, item) => {
+      const { pricing: p, matched } = findPricing(item.model);
+      if (matched) anyMatched = true;
+      return total
+        + item.inputTokens * p.input
+        + item.outputTokens * p.output
+        + item.cacheReadTokens * p.cacheRead;
+    }, 0);
+    return { cost, matched: anyMatched };
+  }
+
+  const p = defaultPricing;
+  return {
+    cost: inputTokens * p.input + outputTokens * p.output + cacheReadTokens * p.cacheRead,
+    matched: false
+  };
 }
 
 function SourceCombobox({
@@ -160,6 +213,7 @@ function MetricCard({
 
 function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [pricing, setPricing] = useState<PricingMap | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshStatus, setRefreshStatus] = useState<RefreshStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -173,8 +227,12 @@ function App() {
 
   const loadSnapshot = useCallback(async () => {
     try {
-      const snap = await api.getSnapshot();
+      const [snap, priceData] = await Promise.all([
+        api.getSnapshot(),
+        api.getPricing().catch(() => null),
+      ]);
       setSnapshot(snap);
+      if (priceData) setPricing(priceData);
     } catch (e) {
       console.error('Failed to load snapshot:', e);
     }
@@ -254,9 +312,31 @@ function App() {
     : tab === 'session' ? sessionData?.totals
     : blocksData?.totals;
 
+  // Aggregate modelBreakdown from all rows since totals doesn't have it
+  const aggregatedModelBreakdown: Array<{ model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number }> = [];
+  for (const row of tableData) {
+    const breakdown = 'modelBreakdown' in row ? row.modelBreakdown : undefined;
+    if (!breakdown) continue;
+    for (const item of breakdown) {
+      const existing = aggregatedModelBreakdown.find(a => a.model === item.model);
+      if (existing) {
+        existing.inputTokens += item.inputTokens;
+        existing.outputTokens += item.outputTokens;
+        existing.cacheReadTokens += item.cacheReadTokens;
+      } else {
+        aggregatedModelBreakdown.push({
+          model: item.model,
+          inputTokens: item.inputTokens,
+          outputTokens: item.outputTokens,
+          cacheReadTokens: item.cacheReadTokens,
+        });
+      }
+    }
+  }
+
   const calendarData =
     source === 'all'
-      ? snapshot?.daily ?? {}
+      ? { all: snapshot?.daily?.['all_daily'] }
       : { [`${source}_daily`]: snapshot?.daily?.[`${source}_daily`] };
 
   return (
@@ -351,11 +431,39 @@ function App() {
         </div>
 
         {totals && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
             <MetricCard title="Total Tokens" value={totals.totalTokens} />
             <MetricCard title="Input" value={totals.inputTokens} />
             <MetricCard title="Cache Hit" value={totals.cacheReadTokens} />
             <MetricCard title="Output" value={totals.outputTokens} />
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Est. Cost
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {(() => {
+                    const { cost, matched } = estimateCost(
+                      totals.inputTokens,
+                      totals.outputTokens,
+                      totals.cacheReadTokens,
+                      aggregatedModelBreakdown,
+                      pricing
+                    );
+                    return (
+                      <>
+                        {formatCost(cost)}
+                        {!matched && pricing && (
+                          <span className="text-xs text-muted-foreground ml-2">(default)</span>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+              </CardContent>
+            </Card>
           </div>
         )}
 
@@ -372,6 +480,7 @@ function App() {
             <ContributionCalendar
               data={calendarData as any}
               onDayClick={setSelectedDate}
+              pricing={pricing}
             />
           </CardContent>
         </Card>
@@ -384,13 +493,14 @@ function App() {
           </CardHeader>
           <CardContent>
             {view === 'table' ? (
-              <UsageTable data={tableData} type={tab} snapshot={snapshot ?? undefined} source={source} />
+              <UsageTable data={tableData} type={tab} snapshot={snapshot ?? undefined} source={source} pricing={pricing} />
             ) : (
               <UsageChart
                 data={tableData}
                 type={tab}
                 snapshot={snapshot ?? undefined}
                 segmentMode={source === 'all' ? segmentMode : 'token-type'}
+                pricing={pricing}
               />
             )}
           </CardContent>

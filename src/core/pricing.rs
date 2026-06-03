@@ -8,10 +8,9 @@ use tokio::sync::RwLock;
 
 use crate::core::error::PricingError;
 
-const LITELLM_PRICING_URL: &str =
-    "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
-const PRICING_FETCH_TIMEOUT_SECONDS: u64 = 10;
-const PRICING_CACHE_FILE: &str = "litellm-pricing.json";
+const OPENROUTER_PRICING_URL: &str = "https://openrouter.ai/api/v1/models";
+const PRICING_FETCH_TIMEOUT_SECONDS: u64 = 15;
+const PRICING_CACHE_FILE: &str = "openrouter-pricing.json";
 
 /// Pricing information for a single model
 #[derive(Debug, Clone, Copy)]
@@ -33,18 +32,27 @@ pub struct PricingMap {
     context_limits: HashMap<String, u64>,
 }
 
-/// LiteLLM pricing JSON structure
+/// OpenRouter API response structure
 #[derive(Debug, Deserialize)]
-struct LiteLlmPricing {
-    input_cost_per_token: Option<f64>,
-    output_cost_per_token: Option<f64>,
-    cache_creation_input_token_cost: Option<f64>,
-    cache_read_input_token_cost: Option<f64>,
-    input_cost_per_token_above_200k_tokens: Option<f64>,
-    output_cost_per_token_above_200k_tokens: Option<f64>,
-    cache_creation_input_token_cost_above_200k_tokens: Option<f64>,
-    cache_read_input_token_cost_above_200k_tokens: Option<f64>,
-    max_input_tokens: Option<u64>,
+struct OpenRouterResponse {
+    data: Vec<OpenRouterModel>,
+}
+
+/// OpenRouter model entry
+#[derive(Debug, Deserialize)]
+struct OpenRouterModel {
+    id: String,
+    context_length: Option<u64>,
+    pricing: OpenRouterPricing,
+}
+
+/// OpenRouter pricing fields (values are per-token USD)
+#[derive(Debug, Deserialize)]
+struct OpenRouterPricing {
+    prompt: Option<String>,
+    completion: Option<String>,
+    input_cache_read: Option<String>,
+    input_cache_write: Option<String>,
 }
 
 pub struct PricingCache {
@@ -99,7 +107,6 @@ impl PricingCache {
         *snap = pricing.clone();
     }
 
-    /// Get pricing for a model, fetching from LiteLLM if needed
     pub async fn get_pricing(&self, model: &str) -> Option<Pricing> {
         let pricing = self.pricing.read().await;
         if let Some(p) = pricing.find(model) {
@@ -107,7 +114,6 @@ impl PricingCache {
         }
         drop(pricing);
         
-        // Try to load from cache
         if self.load_from_cache().await.is_ok() {
             let pricing = self.pricing.read().await;
             if let Some(p) = pricing.find(model) {
@@ -115,7 +121,6 @@ impl PricingCache {
             }
         }
         
-        // Fetch from LiteLLM
         if self.fetch_and_cache().await.is_ok() {
             let pricing = self.pricing.read().await;
             return pricing.find(model);
@@ -124,14 +129,12 @@ impl PricingCache {
         None
     }
 
-    /// Load pricing from local cache file
     async fn load_from_cache(&self) -> Result<(), PricingError> {
         let cache_file = self.cache_dir.join(PRICING_CACHE_FILE);
         if !cache_file.exists() {
             return Err(PricingError::CacheNotFound);
         }
         
-        // Check if cache is from today
         let metadata = fs::metadata(&cache_file)
             .map_err(|e| PricingError::IoError(e.to_string()))?;
         let modified = metadata.modified()
@@ -152,7 +155,6 @@ impl PricingCache {
         Ok(())
     }
 
-    /// Fetch pricing from LiteLLM and cache locally
     async fn fetch_and_cache(&self) -> Result<(), PricingError> {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(PRICING_FETCH_TIMEOUT_SECONDS))
@@ -160,7 +162,7 @@ impl PricingCache {
             .map_err(|e| PricingError::FetchError(e.to_string()))?;
         
         let response = client
-            .get(LITELLM_PRICING_URL)
+            .get(OPENROUTER_PRICING_URL)
             .send()
             .await
             .map_err(|e| PricingError::FetchError(e.to_string()))?;
@@ -177,19 +179,16 @@ impl PricingCache {
             .await
             .map_err(|e| PricingError::FetchError(e.to_string()))?;
         
-        // Save to cache
         let cache_file = self.cache_dir.join(PRICING_CACHE_FILE);
         fs::write(&cache_file, &json)
             .map_err(|e| PricingError::IoError(e.to_string()))?;
         
-        // Update in-memory pricing
         let mut pricing = self.pricing.write().await;
         pricing.load_json(&json);
         
         Ok(())
     }
 
-    /// Force refresh pricing from LiteLLM
     pub async fn refresh(&self) -> Result<(), PricingError> {
         self.fetch_and_cache().await
     }
@@ -198,44 +197,54 @@ impl PricingCache {
 impl PricingMap {
     /// Load pricing from JSON string
     pub fn load_json(&mut self, json: &str) -> usize {
-        let Ok(raw) = serde_json::from_str::<HashMap<String, serde_json::Value>>(json) else {
+        let Ok(response) = serde_json::from_str::<OpenRouterResponse>(json) else {
             return 0;
         };
         
         let mut loaded_count = 0;
-        for (model, value) in raw {
-            let Ok(pricing) = serde_json::from_value::<LiteLlmPricing>(value) else {
+        for model in response.data {
+            if model.id.starts_with('~') {
+                continue;
+            }
+            
+            let Some(prompt_str) = model.pricing.prompt else {
+                continue;
+            };
+            let Some(completion_str) = model.pricing.completion else {
                 continue;
             };
             
-            let Some(input) = pricing.input_cost_per_token else {
-                continue;
-            };
-            let Some(output) = pricing.output_cost_per_token else {
-                continue;
-            };
+            let input = prompt_str.parse::<f64>().unwrap_or(0.0);
+            let output = completion_str.parse::<f64>().unwrap_or(0.0);
             
-            let context_limit = pricing.max_input_tokens;
+            if input <= 0.0 || output <= 0.0 {
+                continue;
+            }
+            
+            let cache_read = model.pricing.input_cache_read
+                .and_then(|s| s.parse::<f64>().ok())
+                .unwrap_or(input * 0.1);
+            
+            let cache_create = model.pricing.input_cache_write
+                .and_then(|s| s.parse::<f64>().ok())
+                .unwrap_or(input * 1.25);
             
             self.entries.insert(
-                model.clone(),
+                model.id.clone(),
                 Pricing {
                     input,
                     output,
-                    cache_create: pricing
-                        .cache_creation_input_token_cost
-                        .unwrap_or(input * 1.25),
-                    cache_read: pricing.cache_read_input_token_cost.unwrap_or(input * 0.1),
-                    input_above_200k: pricing.input_cost_per_token_above_200k_tokens,
-                    output_above_200k: pricing.output_cost_per_token_above_200k_tokens,
-                    cache_create_above_200k: pricing
-                        .cache_creation_input_token_cost_above_200k_tokens,
-                    cache_read_above_200k: pricing.cache_read_input_token_cost_above_200k_tokens,
+                    cache_create,
+                    cache_read,
+                    input_above_200k: None,
+                    output_above_200k: None,
+                    cache_create_above_200k: None,
+                    cache_read_above_200k: None,
                 },
             );
             
-            if let Some(context_limit) = context_limit {
-                self.context_limits.insert(model, context_limit);
+            if let Some(context_limit) = model.context_length {
+                self.context_limits.insert(model.id, context_limit);
             }
             
             loaded_count += 1;
@@ -264,6 +273,21 @@ impl PricingMap {
         !self.entries.is_empty()
     }
 
+    pub fn to_json(&self) -> serde_json::Value {
+        let map: std::collections::HashMap<&str, serde_json::Value> = self.entries
+            .iter()
+            .map(|(model, pricing)| {
+                (model.as_str(), serde_json::json!({
+                    "input": pricing.input,
+                    "output": pricing.output,
+                    "cacheCreate": pricing.cache_create,
+                    "cacheRead": pricing.cache_read,
+                }))
+            })
+            .collect();
+        serde_json::to_value(&map).unwrap_or_default()
+    }
+
     /// Get context limit for a model
     pub fn context_limit(&self, model: &str) -> Option<u64> {
         self.context_limits.get(model).copied().or_else(|| {
@@ -280,7 +304,6 @@ impl PricingMap {
         })
     }
 
-    /// Add built-in pricing for models not in LiteLLM
     pub fn put_builtin_pricing(&mut self) {
         // Claude models
         self.entries.insert(
