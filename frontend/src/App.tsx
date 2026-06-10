@@ -7,7 +7,6 @@ import { UsageChart } from './components/usage-chart';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
 import {
   Popover,
   PopoverContent,
@@ -94,10 +93,6 @@ const REPORT_TABS: { key: ReportType; label: string }[] = [
   { key: 'session', label: 'Sessions' },
   { key: 'blocks', label: 'Blocks' },
 ];
-
-function formatNumber(n: number | undefined): string {
-  return (n ?? 0).toLocaleString();
-}
 
 function formatCost(n: number | undefined): string {
   if (n === undefined || n === 0) return '$0.00';
@@ -320,14 +315,18 @@ function App() {
 
   // Always derived from the Daily report regardless of selected tab
   const allDailyData = snapshot?.daily?.[`${sourceKey}_daily`];
-  const todayRow = allDailyData?.days.find((d) => d.date === today);
   const dailyTotals = allDailyData?.totals;
 
-  const todayTotals = {
-    totalTokens: todayRow?.totalTokens ?? 0,
-    inputTokens: todayRow?.inputTokens ?? 0,
-    cacheReadTokens: todayRow?.cacheReadTokens ?? 0,
-    outputTokens: todayRow?.outputTokens ?? 0,
+  // Active row: selected day (when user clicked mosaic) or today by default
+  const activeRow = allDailyData?.days.find(
+    (d) => d.date === (selectedDate ?? today)
+  );
+
+  const activeTotals = {
+    totalTokens: activeRow?.totalTokens ?? 0,
+    inputTokens: activeRow?.inputTokens ?? 0,
+    cacheReadTokens: activeRow?.cacheReadTokens ?? 0,
+    outputTokens: activeRow?.outputTokens ?? 0,
   };
 
   // Aggregate all-days model breakdown for the historical Est. Cost
@@ -356,10 +355,10 @@ function App() {
     }
   }
 
-  // Cache hit rate for today (shown in the Cache Hit tooltip)
+  // Cache hit rate for active day (shown in the Cache Hit tooltip)
   const cacheHitRate =
-    todayTotals.totalTokens > 0
-      ? ((todayTotals.cacheReadTokens / todayTotals.totalTokens) * 100).toFixed(1)
+    activeTotals.totalTokens > 0
+      ? ((activeTotals.cacheReadTokens / activeTotals.totalTokens) * 100).toFixed(1)
       : '0.0';
 
   const cacheHitTooltip = (
@@ -378,12 +377,6 @@ function App() {
     : tab === 'monthly' ? monthlyData?.months ?? []
     : tab === 'session' ? sessionData?.sessions ?? []
     : blocksData?.blocks ?? [];
-
-  const totals =
-    tab === 'daily' ? dailyData?.totals
-    : tab === 'monthly' ? monthlyData?.totals
-    : tab === 'session' ? sessionData?.totals
-    : blocksData?.totals;
 
   // Aggregate modelBreakdown from all rows since totals doesn't have it
   const aggregatedModelBreakdown: Array<{ model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number }> = [];
@@ -503,78 +496,87 @@ function App() {
           </div>
         </div>
 
-        {(todayTotals || dailyTotals) && (
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
-            <MetricCard
-              title="Total Tokens"
-              value={todayTotals.totalTokens}
-              total={dailyTotals?.totalTokens}
-            />
-            <MetricCard
-              title="Input"
-              value={todayTotals.inputTokens}
-              total={dailyTotals?.inputTokens}
-            />
-            <MetricCard
-              title="Cache Hit"
-              value={todayTotals.cacheReadTokens}
-              total={dailyTotals?.cacheReadTokens}
-              tooltip={cacheHitTooltip}
-            />
-            <MetricCard
-              title="Output"
-              value={todayTotals.outputTokens}
-              total={dailyTotals?.outputTokens}
-            />
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Est. Cost
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {(() => {
-                  const todayCost = estimateCost(
-                    todayTotals.inputTokens,
-                    todayTotals.outputTokens,
-                    todayTotals.cacheReadTokens,
-                    todayRow?.modelBreakdown ?? [],
-                    pricing
-                  );
-                  const totalCost = estimateCost(
-                    dailyTotals?.inputTokens ?? 0,
-                    dailyTotals?.outputTokens ?? 0,
-                    dailyTotals?.cacheReadTokens ?? 0,
-                    allDailyAggregatedBreakdown,
-                    pricing
-                  );
-                  return (
-                    <>
-                      <div className="text-2xl font-bold">
-                        {formatCost(todayCost.cost)}
-                        {!todayCost.matched && pricing && (
-                          <span className="text-xs text-muted-foreground ml-2">(default)</span>
-                        )}
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-0.5">
-                        / {formatCost(totalCost.cost)}
-                      </div>
-                    </>
-                  );
-                })()}
-              </CardContent>
-            </Card>
+        {(activeTotals || dailyTotals) && (
+          <div className="space-y-2">
+            {selectedDate && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <span>Viewing {selectedDate}</span>
+                <button
+                  onClick={() => setSelectedDate(null)}
+                  className="rounded-sm opacity-70 hover:opacity-100"
+                  aria-label="Back to today"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+              <MetricCard
+                title="Total Tokens"
+                value={activeTotals.totalTokens}
+                total={dailyTotals?.totalTokens}
+              />
+              <MetricCard
+                title="Input"
+                value={activeTotals.inputTokens}
+                total={dailyTotals?.inputTokens}
+              />
+              <MetricCard
+                title="Cache Hit"
+                value={activeTotals.cacheReadTokens}
+                total={dailyTotals?.cacheReadTokens}
+                tooltip={cacheHitTooltip}
+              />
+              <MetricCard
+                title="Output"
+                value={activeTotals.outputTokens}
+                total={dailyTotals?.outputTokens}
+              />
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Est. Cost
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {(() => {
+                    const activeCost = estimateCost(
+                      activeTotals.inputTokens,
+                      activeTotals.outputTokens,
+                      activeTotals.cacheReadTokens,
+                      activeRow?.modelBreakdown ?? [],
+                      pricing
+                    );
+                    const totalCost = estimateCost(
+                      dailyTotals?.inputTokens ?? 0,
+                      dailyTotals?.outputTokens ?? 0,
+                      dailyTotals?.cacheReadTokens ?? 0,
+                      allDailyAggregatedBreakdown,
+                      pricing
+                    );
+                    return (
+                      <>
+                        <div className="text-2xl font-bold">
+                          {formatCost(activeCost.cost)}
+                          {!activeCost.matched && pricing && (
+                            <span className="text-xs text-muted-foreground ml-2">(default)</span>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          / {formatCost(totalCost.cost)}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </CardContent>
+              </Card>
+            </div>
           </div>
         )}
 
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>Usage Mosaic</CardTitle>
-              {selectedDate && (
-                <Badge variant="secondary">{selectedDate}</Badge>
-              )}
-            </div>
+            <CardTitle>Usage Mosaic</CardTitle>
           </CardHeader>
           <CardContent>
             <ContributionCalendar
