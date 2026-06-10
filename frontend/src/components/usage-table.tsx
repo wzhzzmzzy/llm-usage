@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { DailyRow, MonthlyRow, SessionRow, BlockRow, ModelBreakdown, Snapshot, PricingMap, ModelPricing } from '../api/types';
+import { Button } from '@/components/ui/button';
 import {
   Table,
   TableBody,
@@ -182,6 +183,10 @@ function DailyTable({
   pricing?: PricingMap | null;
 }) {
   const [expanded, setExpanded] = useState<ExpandedState>({});
+  const PAGE_SIZE = 20;
+  const [currentPage, setCurrentPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(data.length / PAGE_SIZE));
+  const pageData = data.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   const toggleExpand = (key: string, type: 'source' | 'model') => {
     setExpanded((prev) => ({
@@ -193,6 +198,7 @@ function DailyTable({
   const showSourceDrilldown = source === 'all' && snapshot;
 
   return (
+    <>
     <Table>
       <TableHeader>
         <TableRow>
@@ -213,7 +219,7 @@ function DailyTable({
             </TableCell>
           </TableRow>
         ) : (
-          data.map((row) => {
+          pageData.map((row) => {
             const rowKey = row.date;
             const isExpanded = expanded[rowKey];
             const hasModelBreakdown = row.modelBreakdown && row.modelBreakdown.length > 0;
@@ -274,6 +280,30 @@ function DailyTable({
         )}
       </TableBody>
     </Table>
+    {totalPages > 1 && (
+      <div className="flex items-center justify-center gap-4 pt-4">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+          disabled={currentPage === 1}
+        >
+          ← Prev
+        </Button>
+        <span className="text-sm text-muted-foreground">
+          Page {currentPage} / {totalPages}
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+          disabled={currentPage === totalPages}
+        >
+          Next →
+        </Button>
+      </div>
+    )}
+    </>
   );
 }
 
@@ -542,7 +572,7 @@ function formatBlockTime(isoString: string): string {
 export function UsageTable({ data, type, snapshot, source, pricing }: UsageTableProps) {
   switch (type) {
     case 'daily':
-      return <DailyTable data={data as DailyRow[]} snapshot={snapshot} source={source} pricing={pricing} />;
+      return <DailyTable key={source} data={data as DailyRow[]} snapshot={snapshot} source={source} pricing={pricing} />;
     case 'monthly':
       return <MonthlyTable data={data as MonthlyRow[]} snapshot={snapshot} source={source} pricing={pricing} />;
     case 'session':

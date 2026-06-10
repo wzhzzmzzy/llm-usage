@@ -12,15 +12,17 @@
 
 ## 安装
 
-可在 [Releases](../../releases) 页面下载预编译的二进制包（支持 Linux、macOS、Windows）。
+在 [Releases](../../releases) 页面下载 — macOS 下载 `.dmg`，Linux 下载 `.deb` / `.AppImage`，Windows 下载 `.msi`。
 
-或从源码构建（需要 Rust 1.75+、Node.js 20+、[pnpm](https://pnpm.io/)）：
+**macOS：** 安装包未签名。首次打开时右键点击 `.dmg` → 打开，绕过 Gatekeeper 拦截。
+
+从源码构建（需要 Rust 1.75+、Node.js 20+、[pnpm](https://pnpm.io/)）：
 
 ```bash
 git clone <repo-url>
 cd llm-usage
-cd frontend && pnpm install && pnpm build && cd ..
-cargo build --release
+cd frontend && pnpm install && cd ..
+cargo tauri build
 ```
 
 ## 运行
@@ -52,16 +54,6 @@ host = "127.0.0.1"
 port = 3766
 ```
 
-## 桌面应用
-
-可选的 Tauri 封装，提供原生窗口体验：
-
-```bash
-cargo install tauri-cli
-cargo tauri dev    # 开发模式
-cargo tauri build  # 生产构建
-```
-
 ## 工作原理
 
 ```
@@ -81,10 +73,13 @@ llm-usage
 ## 开发
 
 ```bash
-# 前端（Vite 开发服务器）
+# Tauri 应用（前后端同时启动）
+cargo tauri dev
+
+# 仅前端（Vite 开发服务器）
 cd frontend && pnpm dev
 
-# 后端（自动重载）
+# 仅后端（自动重载）
 cargo watch -x run
 
 # 测试
