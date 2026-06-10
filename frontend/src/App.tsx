@@ -22,7 +22,14 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
-import { Check, ChevronsUpDown, RefreshCw, BarChart3, Table, Layers, Users } from 'lucide-react';
+import { Check, ChevronsUpDown, RefreshCw, BarChart3, Table, Layers, Users, Info } from 'lucide-react';
+import { formatTokens } from '@/components/utils';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 let tauriInvoke: ((cmd: string, args?: Record<string, unknown>) => Promise<any>) | null = null;
 
@@ -193,19 +200,27 @@ function SourceCombobox({
 function MetricCard({
   title,
   value,
+  total,
+  tooltip,
 }: {
   title: string;
   value: number | undefined;
+  total: number | undefined;
+  tooltip?: React.ReactNode;
 }) {
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
+        <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1">
           {title}
+          {tooltip}
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold">{formatNumber(value)}</div>
+        <div className="text-2xl font-bold">{formatTokens(value)}</div>
+        <div className="text-xs text-muted-foreground mt-0.5">
+          / {formatTokens(total)}
+        </div>
       </CardContent>
     </Card>
   );
@@ -299,6 +314,64 @@ function App() {
   const monthlyData = snapshot?.monthly?.[`${sourceKey}_monthly`];
   const sessionData = snapshot?.session?.[`${sourceKey}_session`];
   const blocksData = snapshot?.blocks?.[`${sourceKey}_blocks`];
+
+  // Today's date in YYYY-MM-DD (local timezone, e.g. "2026-06-09")
+  const today = new Date().toLocaleDateString('en-CA');
+
+  // Always derived from the Daily report regardless of selected tab
+  const allDailyData = snapshot?.daily?.[`${sourceKey}_daily`];
+  const todayRow = allDailyData?.days.find((d) => d.date === today);
+  const dailyTotals = allDailyData?.totals;
+
+  const todayTotals = {
+    totalTokens: todayRow?.totalTokens ?? 0,
+    inputTokens: todayRow?.inputTokens ?? 0,
+    cacheReadTokens: todayRow?.cacheReadTokens ?? 0,
+    outputTokens: todayRow?.outputTokens ?? 0,
+  };
+
+  // Aggregate all-days model breakdown for the historical Est. Cost
+  const allDailyAggregatedBreakdown: Array<{
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+  }> = [];
+  for (const row of allDailyData?.days ?? []) {
+    if (!row.modelBreakdown) continue;
+    for (const item of row.modelBreakdown) {
+      const existing = allDailyAggregatedBreakdown.find((a) => a.model === item.model);
+      if (existing) {
+        existing.inputTokens += item.inputTokens;
+        existing.outputTokens += item.outputTokens;
+        existing.cacheReadTokens += item.cacheReadTokens;
+      } else {
+        allDailyAggregatedBreakdown.push({
+          model: item.model,
+          inputTokens: item.inputTokens,
+          outputTokens: item.outputTokens,
+          cacheReadTokens: item.cacheReadTokens,
+        });
+      }
+    }
+  }
+
+  // Cache hit rate for today (shown in the Cache Hit tooltip)
+  const cacheHitRate =
+    todayTotals.totalTokens > 0
+      ? ((todayTotals.cacheReadTokens / todayTotals.totalTokens) * 100).toFixed(1)
+      : '0.0';
+
+  const cacheHitTooltip = (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger className="text-muted-foreground/60 hover:text-muted-foreground cursor-default">
+          <Info className="h-3.5 w-3.5" />
+        </TooltipTrigger>
+        <TooltipContent>Cache hit rate: {cacheHitRate}%</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
 
   const tableData =
     tab === 'daily' ? dailyData?.days ?? []
@@ -430,12 +503,29 @@ function App() {
           </div>
         </div>
 
-        {totals && (
+        {(todayTotals || dailyTotals) && (
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
-            <MetricCard title="Total Tokens" value={totals.totalTokens} />
-            <MetricCard title="Input" value={totals.inputTokens} />
-            <MetricCard title="Cache Hit" value={totals.cacheReadTokens} />
-            <MetricCard title="Output" value={totals.outputTokens} />
+            <MetricCard
+              title="Total Tokens"
+              value={todayTotals.totalTokens}
+              total={dailyTotals?.totalTokens}
+            />
+            <MetricCard
+              title="Input"
+              value={todayTotals.inputTokens}
+              total={dailyTotals?.inputTokens}
+            />
+            <MetricCard
+              title="Cache Hit"
+              value={todayTotals.cacheReadTokens}
+              total={dailyTotals?.cacheReadTokens}
+              tooltip={cacheHitTooltip}
+            />
+            <MetricCard
+              title="Output"
+              value={todayTotals.outputTokens}
+              total={dailyTotals?.outputTokens}
+            />
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -443,25 +533,35 @@ function App() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">
-                  {(() => {
-                    const { cost, matched } = estimateCost(
-                      totals.inputTokens,
-                      totals.outputTokens,
-                      totals.cacheReadTokens,
-                      aggregatedModelBreakdown,
-                      pricing
-                    );
-                    return (
-                      <>
-                        {formatCost(cost)}
-                        {!matched && pricing && (
+                {(() => {
+                  const todayCost = estimateCost(
+                    todayTotals.inputTokens,
+                    todayTotals.outputTokens,
+                    todayTotals.cacheReadTokens,
+                    todayRow?.modelBreakdown ?? [],
+                    pricing
+                  );
+                  const totalCost = estimateCost(
+                    dailyTotals?.inputTokens ?? 0,
+                    dailyTotals?.outputTokens ?? 0,
+                    dailyTotals?.cacheReadTokens ?? 0,
+                    allDailyAggregatedBreakdown,
+                    pricing
+                  );
+                  return (
+                    <>
+                      <div className="text-2xl font-bold">
+                        {formatCost(todayCost.cost)}
+                        {!todayCost.matched && pricing && (
                           <span className="text-xs text-muted-foreground ml-2">(default)</span>
                         )}
-                      </>
-                    );
-                  })()}
-                </div>
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        / {formatCost(totalCost.cost)}
+                      </div>
+                    </>
+                  );
+                })()}
               </CardContent>
             </Card>
           </div>
