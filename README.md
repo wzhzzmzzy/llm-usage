@@ -12,15 +12,17 @@ Multiple AI coding assistants, multiple usage trackers, no unified view. This to
 
 ## Install
 
-Pre-built binaries for Linux, macOS, and Windows are available on the [Releases](../../releases) page.
+Download from the [Releases](../../releases) page — `.dmg` for macOS, `.deb`/`.AppImage` for Linux, `.msi` for Windows.
 
-Or build from source (requires Rust 1.75+, Node.js 20+, [pnpm](https://pnpm.io/)):
+**macOS:** The app is unsigned. Right-click the `.dmg` → Open to bypass Gatekeeper on first launch.
+
+To build from source (requires Rust 1.75+, Node.js 20+, [pnpm](https://pnpm.io/)):
 
 ```bash
 git clone <repo-url>
 cd llm-usage
-cd frontend && pnpm install && pnpm build && cd ..
-cargo build --release
+cd frontend && pnpm install && cd ..
+cargo tauri build
 ```
 
 ## Run
@@ -52,16 +54,6 @@ host = "127.0.0.1"
 port = 3766
 ```
 
-## Desktop App
-
-Optional Tauri wrapper for a native window:
-
-```bash
-cargo install tauri-cli
-cargo tauri dev    # development
-cargo tauri build  # production build
-```
-
 ## How It Works
 
 ```
@@ -81,10 +73,13 @@ Each source adapter knows how to read its tool's local data (e.g., Claude JSONL,
 ## Dev
 
 ```bash
-# Frontend (Vite dev server)
+# Tauri app (frontend + backend together)
+cargo tauri dev
+
+# Frontend only (Vite dev server)
 cd frontend && pnpm dev
 
-# Backend (auto-reload)
+# Backend only (auto-reload)
 cargo watch -x run
 
 # Tests
