@@ -1,7 +1,7 @@
 {
   "build": {
-    "beforeDevCommand": "./src-tauri/dev.sh",
-    "beforeBuildCommand": "./src-tauri/build.sh",
+    "beforeDevCommand": "pnpm --prefix frontend dev",
+    "beforeBuildCommand": "pnpm --prefix frontend build",
     "devPath": "http://localhost:5173",
     "distDir": "../frontend/dist"
   },
