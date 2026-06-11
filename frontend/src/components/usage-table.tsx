@@ -132,8 +132,10 @@ function SourceBreakdownRow({
             <TableCell className="text-right text-muted-foreground">{fmt(row.cacheReadTokens)}</TableCell>
             <TableCell className="text-right text-muted-foreground">{fmt(row.outputTokens)}</TableCell>
             <TableCell className="text-right text-muted-foreground">{fmtCost(cost)}</TableCell>
-            <TableCell className="text-muted-foreground">
-              {row.modelsUsed?.join(', ') ?? '-'}
+            <TableCell className="text-muted-foreground max-w-[330px]">
+              <span className="block truncate" title={row.modelsUsed?.join(', ')}>
+                {row.modelsUsed?.join(', ') ?? '-'}
+              </span>
             </TableCell>
           </TableRow>
         );
@@ -208,7 +210,7 @@ function DailyTable({
           <TableHead className="text-right">Cache Hit</TableHead>
           <TableHead className="text-right">Output</TableHead>
           <TableHead className="text-right">Cost</TableHead>
-          <TableHead>Models</TableHead>
+          <TableHead className="max-w-[330px]">Models</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -258,8 +260,10 @@ function DailyTable({
                   <TableCell className="text-right">{fmt(row.cacheReadTokens)}</TableCell>
                   <TableCell className="text-right">{fmt(row.outputTokens)}</TableCell>
                   <TableCell className="text-right">{fmtCost(cost)}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {row.modelsUsed?.join(', ') ?? '-'}
+                  <TableCell className="text-muted-foreground max-w-[330px]">
+                    <span className="block truncate" title={row.modelsUsed?.join(', ')}>
+                      {row.modelsUsed?.join(', ') ?? '-'}
+                    </span>
                   </TableCell>
                 </TableRow>
                 {isExpanded === 'source' && showSourceDrilldown && (
@@ -339,7 +343,7 @@ function MonthlyTable({
           <TableHead className="text-right">Cache Hit</TableHead>
           <TableHead className="text-right">Output</TableHead>
           <TableHead className="text-right">Cost</TableHead>
-          <TableHead>Models</TableHead>
+          <TableHead className="max-w-[330px]">Models</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -389,8 +393,10 @@ function MonthlyTable({
                   <TableCell className="text-right">{fmt(row.cacheReadTokens)}</TableCell>
                   <TableCell className="text-right">{fmt(row.outputTokens)}</TableCell>
                   <TableCell className="text-right">{fmtCost(cost)}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {row.modelsUsed?.join(', ') ?? '-'}
+                  <TableCell className="text-muted-foreground max-w-[330px]">
+                    <span className="block truncate" title={row.modelsUsed?.join(', ')}>
+                      {row.modelsUsed?.join(', ') ?? '-'}
+                    </span>
                   </TableCell>
                 </TableRow>
                 {isExpanded === 'source' && showSourceDrilldown && (
@@ -510,7 +516,7 @@ function BlockTable({ data, pricing }: { data: BlockRow[]; pricing?: PricingMap 
           <TableHead className="text-right">Cache Hit</TableHead>
           <TableHead className="text-right">Output</TableHead>
           <TableHead className="text-right">Cost</TableHead>
-          <TableHead>Models</TableHead>
+          <TableHead className="max-w-[330px]">Models</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -547,8 +553,10 @@ function BlockTable({ data, pricing }: { data: BlockRow[]; pricing?: PricingMap 
                 <TableCell className="text-right">{fmt(row.cacheReadTokens)}</TableCell>
                 <TableCell className="text-right">{fmt(row.outputTokens)}</TableCell>
                 <TableCell className="text-right">{fmtCost(cost)}</TableCell>
-                <TableCell className="text-muted-foreground">
-                  {row.modelsUsed?.join(', ') ?? '-'}
+                <TableCell className="text-muted-foreground max-w-[330px]">
+                  <span className="block truncate" title={row.modelsUsed?.join(', ')}>
+                    {row.modelsUsed?.join(', ') ?? '-'}
+                  </span>
                 </TableCell>
               </TableRow>
             );
