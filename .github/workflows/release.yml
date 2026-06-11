@@ -18,10 +18,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Get version from tauri.conf.json
+      - name: Get version from Cargo.toml
         id: get_version
         run: |
-          VERSION=$(jq -r '.package.version' src-tauri/tauri.conf.json)
+          VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "llm-usage") | .version')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
@@ -115,4 +115,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.target }} --config '{"package":{"version":"${{ needs.create-release.outputs.version }}"}}'
