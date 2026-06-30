@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from '@/i18n/context';
 import type { DailyRow, MonthlyRow, SessionRow, BlockRow, ModelBreakdown, Snapshot, PricingMap, ModelPricing } from '../api/types';
 import { Button } from '@/components/ui/button';
 import {
@@ -74,6 +75,7 @@ function ExpandButton({
   onClick: () => void;
   type: 'source' | 'model';
 }) {
+  const { t } = useTranslation();
   const Icon = type === 'source' ? Layers : Cpu;
   const expandedIcon = <ChevronDown className="h-3.5 w-3.5" />;
   const collapsedIcon = <Icon className="h-3.5 w-3.5" />;
@@ -82,7 +84,7 @@ function ExpandButton({
     <button
       onClick={onClick}
       className={`p-0.5 hover:bg-muted rounded ${type === 'source' ? 'text-emerald-600' : 'text-violet-600'}`}
-      title={type === 'source' ? 'Drill down by source' : 'Drill down by model'}
+      title={type === 'source' ? t('drill.bySource') : t('drill.byModel')}
     >
       {isExpanded ? expandedIcon : collapsedIcon}
     </button>
@@ -145,6 +147,7 @@ function SourceBreakdownRow({
 }
 
 function ModelBreakdownRows({ breakdown, pricing }: { breakdown: ModelBreakdown[]; pricing?: PricingMap | null }) {
+  const { t } = useTranslation();
   return (
     <>
       {breakdown.map((mb) => {
@@ -164,7 +167,7 @@ function ModelBreakdownRows({ breakdown, pricing }: { breakdown: ModelBreakdown[
             <TableCell className="text-right text-muted-foreground">{fmt(mb.outputTokens)}</TableCell>
             <TableCell className="text-right text-muted-foreground">{fmtCost(cost)}</TableCell>
             <TableCell className="text-muted-foreground">
-              {fmt(mb.requestCount)} reqs
+              {t('table.reqs', { n: fmt(mb.requestCount) })}
             </TableCell>
           </TableRow>
         );
@@ -184,6 +187,7 @@ function DailyTable({
   source?: string;
   pricing?: PricingMap | null;
 }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState<ExpandedState>({});
   const PAGE_SIZE = 20;
   const [currentPage, setCurrentPage] = useState(1);
@@ -204,20 +208,20 @@ function DailyTable({
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Date</TableHead>
-          <TableHead className="text-right">Total</TableHead>
-          <TableHead className="text-right">Input</TableHead>
-          <TableHead className="text-right">Cache Hit</TableHead>
-          <TableHead className="text-right">Output</TableHead>
-          <TableHead className="text-right">Cost</TableHead>
-          <TableHead className="max-w-[330px]">Models</TableHead>
+          <TableHead>{t('table.date')}</TableHead>
+          <TableHead className="text-right">{t('table.total')}</TableHead>
+          <TableHead className="text-right">{t('table.input')}</TableHead>
+          <TableHead className="text-right">{t('table.cacheHit')}</TableHead>
+          <TableHead className="text-right">{t('table.output')}</TableHead>
+          <TableHead className="text-right">{t('table.cost')}</TableHead>
+          <TableHead className="max-w-[330px]">{t('table.models')}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {data.length === 0 ? (
           <TableRow>
             <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
-              No data available
+              {t('table.noData')}
             </TableCell>
           </TableRow>
         ) : (
@@ -292,10 +296,10 @@ function DailyTable({
           onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
           disabled={currentPage === 1}
         >
-          ← Prev
+          {t('page.prev')}
         </Button>
         <span className="text-sm text-muted-foreground">
-          Page {currentPage} / {totalPages}
+          {t('page.info', { current: currentPage, total: totalPages })}
         </span>
         <Button
           variant="outline"
@@ -303,7 +307,7 @@ function DailyTable({
           onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
           disabled={currentPage === totalPages}
         >
-          Next →
+          {t('page.next')}
         </Button>
       </div>
     )}
@@ -322,6 +326,7 @@ function MonthlyTable({
   source?: string;
   pricing?: PricingMap | null;
 }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState<ExpandedState>({});
 
   const toggleExpand = (key: string, type: 'source' | 'model') => {
@@ -337,20 +342,20 @@ function MonthlyTable({
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Month</TableHead>
-          <TableHead className="text-right">Total</TableHead>
-          <TableHead className="text-right">Input</TableHead>
-          <TableHead className="text-right">Cache Hit</TableHead>
-          <TableHead className="text-right">Output</TableHead>
-          <TableHead className="text-right">Cost</TableHead>
-          <TableHead className="max-w-[330px]">Models</TableHead>
+          <TableHead>{t('table.month')}</TableHead>
+          <TableHead className="text-right">{t('table.total')}</TableHead>
+          <TableHead className="text-right">{t('table.input')}</TableHead>
+          <TableHead className="text-right">{t('table.cacheHit')}</TableHead>
+          <TableHead className="text-right">{t('table.output')}</TableHead>
+          <TableHead className="text-right">{t('table.cost')}</TableHead>
+          <TableHead className="max-w-[330px]">{t('table.models')}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {data.length === 0 ? (
           <TableRow>
             <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
-              No data available
+              {t('table.noData')}
             </TableCell>
           </TableRow>
         ) : (
@@ -421,6 +426,7 @@ function MonthlyTable({
 }
 
 function SessionTable({ data, pricing }: { data: SessionRow[]; pricing?: PricingMap | null }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState<ExpandedState>({});
 
   const toggleExpand = (key: string) => {
@@ -434,21 +440,21 @@ function SessionTable({ data, pricing }: { data: SessionRow[]; pricing?: Pricing
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Session</TableHead>
-          <TableHead>Project</TableHead>
-          <TableHead className="text-right">Total</TableHead>
-          <TableHead className="text-right">Input</TableHead>
-          <TableHead className="text-right">Cache Hit</TableHead>
-          <TableHead className="text-right">Output</TableHead>
-          <TableHead className="text-right">Cost</TableHead>
-          <TableHead>Last Active</TableHead>
+          <TableHead>{t('table.session')}</TableHead>
+          <TableHead>{t('table.project')}</TableHead>
+          <TableHead className="text-right">{t('table.total')}</TableHead>
+          <TableHead className="text-right">{t('table.input')}</TableHead>
+          <TableHead className="text-right">{t('table.cacheHit')}</TableHead>
+          <TableHead className="text-right">{t('table.output')}</TableHead>
+          <TableHead className="text-right">{t('table.cost')}</TableHead>
+          <TableHead>{t('table.lastActive')}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {data.length === 0 ? (
           <TableRow>
             <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
-              No data available
+              {t('table.noData')}
             </TableCell>
           </TableRow>
         ) : (
@@ -504,26 +510,27 @@ function SessionTable({ data, pricing }: { data: SessionRow[]; pricing?: Pricing
 }
 
 function BlockTable({ data, pricing }: { data: BlockRow[]; pricing?: PricingMap | null }) {
+  const { t } = useTranslation();
   return (
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Status</TableHead>
-          <TableHead>Start Time</TableHead>
-          <TableHead>End Time</TableHead>
-          <TableHead className="text-right">Total</TableHead>
-          <TableHead className="text-right">Input</TableHead>
-          <TableHead className="text-right">Cache Hit</TableHead>
-          <TableHead className="text-right">Output</TableHead>
-          <TableHead className="text-right">Cost</TableHead>
-          <TableHead className="max-w-[330px]">Models</TableHead>
+          <TableHead>{t('table.status')}</TableHead>
+          <TableHead>{t('table.startTime')}</TableHead>
+          <TableHead>{t('table.endTime')}</TableHead>
+          <TableHead className="text-right">{t('table.total')}</TableHead>
+          <TableHead className="text-right">{t('table.input')}</TableHead>
+          <TableHead className="text-right">{t('table.cacheHit')}</TableHead>
+          <TableHead className="text-right">{t('table.output')}</TableHead>
+          <TableHead className="text-right">{t('table.cost')}</TableHead>
+          <TableHead className="max-w-[330px]">{t('table.models')}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {data.length === 0 ? (
           <TableRow>
             <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
-              No data available
+              {t('table.noData')}
             </TableCell>
           </TableRow>
         ) : (
@@ -534,11 +541,11 @@ function BlockTable({ data, pricing }: { data: BlockRow[]; pricing?: PricingMap 
                 <TableCell>
                   {row.isActive ? (
                     <span className="inline-flex items-center rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-600">
-                      Active
+                      {t('block.active')}
                     </span>
                   ) : (
                     <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                      Done
+                      {t('block.done')}
                     </span>
                   )}
                 </TableCell>
