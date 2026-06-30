@@ -1,7 +1,7 @@
 // frontend/src/i18n/context.tsx
 import { createContext, useContext, useState, useEffect } from 'react';
 import type { Lang, TranslationKeys } from './index';
-import { detectLang, translations } from './index';
+import { detectLang, translations, LANG_TO_LOCALE } from './index';
 
 interface LangContextValue {
   lang: Lang;
@@ -17,30 +17,34 @@ export function LangProvider({ children }: { children: React.ReactNode }) {
   const [lang, setLang] = useState<Lang>(() => {
     // 优先使用 Rust 注入的初始值，否则从系统语言检测
     const injected = (window as any).__INITIAL_LANG__ as Lang | undefined;
-    const valid: Lang[] = ['en', 'zh-CN', 'zh-TW', 'ja'];
+    const valid = Object.keys(LANG_TO_LOCALE) as Lang[];
     if (injected && valid.includes(injected)) return injected;
     return detectLang();
   });
 
   useEffect(() => {
-    const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+    const isTauri = '__TAURI__' in window;
     if (!isTauri) return;
+
+    let active = true;
+
+    import('@tauri-apps/api/event').then(({ listen }) =>
+      listen<string>('language-changed', (event) => {
+        const valid = Object.keys(LANG_TO_LOCALE) as Lang[];
+        const newLang = event.payload as Lang;
+        if (active && valid.includes(newLang)) {
+          setLang(newLang);
+        }
+      })
+    ).then((fn) => {
+      if (!active) fn();
+      else unlisten = fn;
+    });
 
     let unlisten: (() => void) | undefined;
 
-    import('@tauri-apps/api/event').then(({ listen }) => {
-      listen<string>('language-changed', (event) => {
-        const valid: Lang[] = ['en', 'zh-CN', 'zh-TW', 'ja'];
-        const newLang = event.payload as Lang;
-        if (valid.includes(newLang)) {
-          setLang(newLang);
-        }
-      }).then((fn) => {
-        unlisten = fn;
-      });
-    });
-
     return () => {
+      active = false;
       unlisten?.();
     };
   }, []);
