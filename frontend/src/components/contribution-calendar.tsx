@@ -2,9 +2,12 @@ import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import type { DailyReport, PricingMap, ModelBreakdown } from '../api/types';
 import { useTranslation } from '@/i18n/context';
 import { LANG_TO_LOCALE } from '@/i18n/index';
+import { getCellHighlight } from '@/lib/selection';
+import type { Selection } from '@/lib/selection';
 
 interface ContributionCalendarProps {
   data: Record<string, DailyReport>;
+  selection?: Selection;
   onDayClick?: (date: string) => void;
   pricing?: PricingMap | null;
 }
@@ -77,7 +80,7 @@ function getIntensity(tokens: number): number {
   return 4;
 }
 
-export function ContributionCalendar({ data, onDayClick, pricing }: ContributionCalendarProps) {
+export function ContributionCalendar({ data, selection = { type: 'none' }, onDayClick, pricing }: ContributionCalendarProps) {
   const { lang, t } = useTranslation();
   const locale = LANG_TO_LOCALE[lang];
 
@@ -245,6 +248,11 @@ export function ContributionCalendar({ data, onDayClick, pricing }: Contribution
           {grid.map((week, weekIndex) =>
             week.map((day, dayIndex) => {
               const intensity = getIntensity(day.tokens);
+              const highlight = getCellHighlight(
+                day.date,
+                selection,
+                tooltip?.day.date ?? null,
+              );
               return (
                 <rect
                   key={day.date}
@@ -254,7 +262,24 @@ export function ContributionCalendar({ data, onDayClick, pricing }: Contribution
                   height={CELL_SIZE}
                   rx={2}
                   fill={COLORS[intensity]}
-                  className="cursor-pointer hover:stroke-2 hover:stroke-foreground"
+                  stroke={
+                    highlight === 'start' || highlight === 'end'
+                      ? 'white'
+                      : highlight === 'in-range' || highlight === 'preview'
+                        ? 'currentColor'
+                        : undefined
+                  }
+                  strokeWidth={
+                    highlight === 'start' || highlight === 'end'
+                      ? 2
+                      : highlight === 'in-range'
+                        ? 1
+                        : highlight === 'preview'
+                          ? 1
+                          : undefined
+                  }
+                  opacity={highlight === 'preview' ? 0.7 : undefined}
+                  className={`cursor-pointer${highlight === 'none' ? ' hover:stroke-2 hover:stroke-foreground' : ''}`}
                   onClick={() => onDayClick?.(day.date)}
                   onMouseEnter={(e) => handleMouseEnter(day, e)}
                   onMouseLeave={handleMouseLeave}
