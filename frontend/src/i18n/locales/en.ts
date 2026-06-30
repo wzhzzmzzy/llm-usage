@@ -29,6 +29,7 @@ const en = {
   // Mosaic / report
   'mosaic.title': 'Usage Mosaic',
   'mosaic.viewing': 'Viewing {date}',
+  'mosaic.range': '{start} → {end} ({days} days)',
   'report.title': '{tab} Report',
   // Tooltips
   'tooltip.cacheHit': 'Cache hit rate: {rate}%',

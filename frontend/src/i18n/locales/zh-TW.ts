@@ -25,6 +25,7 @@ const zhTW: Record<TranslationKeys, string> = {
   'metric.costDefault': '(預設)',
   'mosaic.title': '使用熱力圖',
   'mosaic.viewing': '查看 {date}',
+  'mosaic.range': '{start} → {end}（{days} 天）',
   'report.title': '{tab} 報告',
   'tooltip.cacheHit': '快取命中率：{rate}%',
   'status.noData': '暫無資料，點擊重新整理以取得用量資訊。',

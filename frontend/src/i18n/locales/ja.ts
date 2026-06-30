@@ -25,6 +25,7 @@ const ja: Record<TranslationKeys, string> = {
   'metric.costDefault': '(デフォルト)',
   'mosaic.title': '使用ヒートマップ',
   'mosaic.viewing': '{date} を表示中',
+  'mosaic.range': '{start} → {end}（{days} 日間）',
   'report.title': '{tab} レポート',
   'tooltip.cacheHit': 'キャッシュヒット率：{rate}%',
   'status.noData': 'データがありません。更新をクリックして使用状況を取得してください。',

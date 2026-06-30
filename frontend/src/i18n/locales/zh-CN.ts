@@ -25,6 +25,7 @@ const zhCN: Record<TranslationKeys, string> = {
   'metric.costDefault': '(默认)',
   'mosaic.title': '使用情况',
   'mosaic.viewing': '查看 {date}',
+  'mosaic.range': '{start} → {end}（{days} 天）',
   'report.title': '{tab} 报告',
   'tooltip.cacheHit': '缓存命中率：{rate}%',
   'status.noData': '暂无数据，点击刷新获取用量信息。',
