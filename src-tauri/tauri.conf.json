@@ -31,15 +31,9 @@
     "security": {
       "csp": null
     },
-    "windows": [
-      {
-        "fullscreen": false,
-        "resizable": true,
-        "title": "LLM Usage Dashboard",
-        "width": 1055,
-        "height": 800,
-        "maxWidth": 1055
-      }
-    ]
+    "systemTray": {
+      "iconPath": "icons/32x32.png",
+      "iconAsTemplate": true
+    }
   }
 }

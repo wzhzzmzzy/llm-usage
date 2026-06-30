@@ -10,6 +10,10 @@ use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
+use tauri::{
+    CustomMenuItem, Manager, SystemTray, SystemTrayEvent, SystemTrayMenu,
+    SystemTrayMenuItem,
+};
 
 #[derive(Serialize, Deserialize, Default, Clone)]
 struct AppConfig {
@@ -365,6 +369,30 @@ fn get_language() -> String {
     load_config().language
 }
 
+const LANG_OPTIONS: &[(&str, &str)] = &[
+    ("zh-CN", "简体中文"),
+    ("zh-TW", "繁體中文"),
+    ("ja", "日本語"),
+    ("en", "English"),
+];
+
+fn build_tray_menu(current_lang: &str) -> SystemTrayMenu {
+    let mut menu = SystemTrayMenu::new();
+    for (id, label) in LANG_OPTIONS {
+        // 当前语言前加 ✓，其他前加空格对齐
+        let display = if *id == current_lang {
+            format!("✓ {}", label)
+        } else {
+            format!("  {}", label)
+        };
+        menu = menu.add_item(CustomMenuItem::new(id.to_string(), display));
+    }
+    menu = menu
+        .add_native_item(SystemTrayMenuItem::Separator)
+        .add_item(CustomMenuItem::new("quit", "退出 / Quit"));
+    menu
+}
+
 #[tauri::command]
 fn health() -> serde_json::Value {
     serde_json::json!({
@@ -377,7 +405,60 @@ fn health() -> serde_json::Value {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let config = load_config();
+    let initial_lang = config.language.clone();
+    let tray_menu = build_tray_menu(&config.language);
+
     tauri::Builder::default()
+        .system_tray(SystemTray::new().with_menu(tray_menu))
+        .setup(move |app| {
+            // 初始语言注入：在所有页面 JS 执行前设置 window.__INITIAL_LANG__
+            // 如果没有保存的语言偏好，不注入（前端 detectLang() 接管）
+            let init_script = if !initial_lang.is_empty() {
+                format!("window.__INITIAL_LANG__ = '{}';", initial_lang)
+            } else {
+                String::new()
+            };
+
+            tauri::WindowBuilder::new(
+                app,
+                "main",
+                tauri::WindowUrl::App("index.html".into()),
+            )
+            .title("LLM Usage Dashboard")
+            .inner_size(1055.0, 800.0)
+            .max_inner_size(1055.0, f64::MAX)
+            .resizable(true)
+            .initialization_script(&init_script)
+            .build()?;
+
+            Ok(())
+        })
+        .on_system_tray_event(|app, event| {
+            if let SystemTrayEvent::MenuItemClick { id, .. } = event {
+                match id.as_str() {
+                    lang @ ("zh-CN" | "zh-TW" | "ja" | "en") => {
+                        // 1. 持久化到配置文件
+                        let mut cfg = load_config();
+                        cfg.language = lang.to_string();
+                        save_config(&cfg);
+
+                        // 2. 更新托盘菜单勾选项
+                        let new_menu = build_tray_menu(lang);
+                        if let Err(e) = app.tray_handle().set_menu(new_menu) {
+                            eprintln!("[i18n] Failed to update tray menu: {}", e);
+                        }
+
+                        // 3. 通知前端实时切换语言
+                        if let Err(e) = app.emit_all("language-changed", lang) {
+                            eprintln!("[i18n] Failed to emit language-changed: {}", e);
+                        }
+                    }
+                    "quit" => std::process::exit(0),
+                    _ => {}
+                }
+            }
+        })
         .manage(AppState {
             entries: Mutex::new(None),
         })
