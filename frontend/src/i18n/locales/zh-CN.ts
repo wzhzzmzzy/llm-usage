@@ -23,7 +23,7 @@ const zhCN: Record<TranslationKeys, string> = {
   'metric.output': '输出',
   'metric.cost': '预估费用',
   'metric.costDefault': '(默认)',
-  'mosaic.title': '使用热力图',
+  'mosaic.title': '使用情况',
   'mosaic.viewing': '查看 {date}',
   'report.title': '{tab} 报告',
   'tooltip.cacheHit': '缓存命中率：{rate}%',
