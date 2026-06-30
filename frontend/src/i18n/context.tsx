@@ -1,5 +1,5 @@
 // frontend/src/i18n/context.tsx
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import type { Lang, TranslationKeys } from './index';
 import { detectLang, translations, LANG_TO_LOCALE } from './index';
 
@@ -49,7 +49,7 @@ export function LangProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const t = (key: TranslationKeys, params?: Record<string, string | number>): string => {
+  const t = useCallback((key: TranslationKeys, params?: Record<string, string | number>): string => {
     const locale = translations[lang];
     let str: string = locale[key] ?? key;
     if (params) {
@@ -58,10 +58,12 @@ export function LangProvider({ children }: { children: React.ReactNode }) {
       }
     }
     return str;
-  };
+  }, [lang]);
+
+  const value = useMemo(() => ({ lang, t }), [lang, t]);
 
   return (
-    <LangContext.Provider value={{ lang, t }}>
+    <LangContext.Provider value={value}>
       {children}
     </LangContext.Provider>
   );

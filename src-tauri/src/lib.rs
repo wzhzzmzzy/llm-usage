@@ -414,7 +414,8 @@ pub fn run() {
         .setup(move |app| {
             // 初始语言注入：在所有页面 JS 执行前设置 window.__INITIAL_LANG__
             // 如果没有保存的语言偏好，不注入（前端 detectLang() 接管）
-            let init_script = if !initial_lang.is_empty() {
+            let valid_langs = ["zh-CN", "zh-TW", "ja", "en"];
+            let init_script = if valid_langs.contains(&initial_lang.as_str()) {
                 format!("window.__INITIAL_LANG__ = '{}';", initial_lang)
             } else {
                 String::new()
