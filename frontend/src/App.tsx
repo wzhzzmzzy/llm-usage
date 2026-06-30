@@ -29,6 +29,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { useTranslation } from './i18n/context';
 
 let tauriInvoke: ((cmd: string, args?: Record<string, unknown>) => Promise<any>) | null = null;
 
@@ -78,21 +79,6 @@ function createApi(): UsageApi {
 }
 
 const api = createApi();
-
-const SOURCES: { value: Source; label: string }[] = [
-  { value: 'all', label: 'All Sources' },
-  { value: 'claude', label: 'Claude' },
-  { value: 'codex', label: 'Codex' },
-  { value: 'gemini', label: 'Gemini' },
-  { value: 'opencode', label: 'OpenCode' },
-];
-
-const REPORT_TABS: { key: ReportType; label: string }[] = [
-  { key: 'daily', label: 'Daily' },
-  { key: 'monthly', label: 'Monthly' },
-  { key: 'session', label: 'Sessions' },
-  { key: 'blocks', label: 'Blocks' },
-];
 
 function formatCost(n: number | undefined): string {
   if (n === undefined || n === 0) return '$0.00';
@@ -145,10 +131,13 @@ function estimateCost(
 function SourceCombobox({
   value,
   onValueChange,
+  sources,
 }: {
   value: Source;
   onValueChange: (v: Source) => void;
+  sources: { value: Source; label: string }[];
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
 
   return (
@@ -157,16 +146,16 @@ function SourceCombobox({
         className="inline-flex items-center justify-between rounded-md border bg-background px-3 py-2 text-sm hover:bg-muted"
         onClick={() => setOpen(!open)}
       >
-        {SOURCES.find((s) => s.value === value)?.label ?? 'Select source'}
+        {sources.find((s) => s.value === value)?.label ?? t('source.placeholder')}
         <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
       </PopoverTrigger>
       <PopoverContent className="w-[180px] p-0">
         <Command>
-          <CommandInput placeholder="Search source..." />
+          <CommandInput placeholder={t('source.search')} />
           <CommandList>
-            <CommandEmpty>No source found.</CommandEmpty>
+            <CommandEmpty>{t('source.notFound')}</CommandEmpty>
             <CommandGroup>
-              {SOURCES.map((s) => (
+              {sources.map((s) => (
                 <CommandItem
                   key={s.value}
                   value={s.value}
@@ -222,6 +211,7 @@ function MetricCard({
 }
 
 function App() {
+  const { t } = useTranslation();
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [pricing, setPricing] = useState<PricingMap | null>(null);
   const [loading, setLoading] = useState(false);
@@ -234,6 +224,21 @@ function App() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const hasRefreshed = useRef(false);
   const pollIntervalRef = useRef<number | null>(null);
+
+  const SOURCES: { value: Source; label: string }[] = [
+    { value: 'all', label: t('source.all') },
+    { value: 'claude', label: 'Claude' },
+    { value: 'codex', label: 'Codex' },
+    { value: 'gemini', label: 'Gemini' },
+    { value: 'opencode', label: 'OpenCode' },
+  ];
+
+  const REPORT_TABS: { key: ReportType; label: string }[] = [
+    { key: 'daily', label: t('tab.daily') },
+    { key: 'monthly', label: t('tab.monthly') },
+    { key: 'session', label: t('tab.session') },
+    { key: 'blocks', label: t('tab.blocks') },
+  ];
 
   const loadSnapshot = useCallback(async () => {
     try {
@@ -310,14 +315,11 @@ function App() {
   const sessionData = snapshot?.session?.[`${sourceKey}_session`];
   const blocksData = snapshot?.blocks?.[`${sourceKey}_blocks`];
 
-  // Today's date in YYYY-MM-DD (local timezone, e.g. "2026-06-09")
   const today = new Date().toLocaleDateString('en-CA');
 
-  // Always derived from the Daily report regardless of selected tab
   const allDailyData = snapshot?.daily?.[`${sourceKey}_daily`];
   const dailyTotals = allDailyData?.totals;
 
-  // Active row: selected day (when user clicked mosaic) or today by default
   const activeRow = allDailyData?.days.find(
     (d) => d.date === (selectedDate ?? today)
   );
@@ -329,7 +331,6 @@ function App() {
     outputTokens: activeRow?.outputTokens ?? 0,
   };
 
-  // Aggregate all-days model breakdown for the historical Est. Cost
   const allDailyAggregatedBreakdown: Array<{
     model: string;
     inputTokens: number;
@@ -355,7 +356,6 @@ function App() {
     }
   }
 
-  // Cache hit rate for active day (shown in the Cache Hit tooltip)
   const cacheHitRate =
     activeTotals.totalTokens > 0
       ? ((activeTotals.cacheReadTokens / activeTotals.totalTokens) * 100).toFixed(1)
@@ -367,7 +367,7 @@ function App() {
         <TooltipTrigger className="text-muted-foreground/60 hover:text-muted-foreground cursor-default">
           <Info className="h-3.5 w-3.5" />
         </TooltipTrigger>
-        <TooltipContent>Cache hit rate: {cacheHitRate}%</TooltipContent>
+        <TooltipContent>{t('tooltip.cacheHit', { rate: cacheHitRate })}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );
@@ -378,7 +378,6 @@ function App() {
     : tab === 'session' ? sessionData?.sessions ?? []
     : blocksData?.blocks ?? [];
 
-  // Aggregate modelBreakdown from all rows since totals doesn't have it
   const aggregatedModelBreakdown: Array<{ model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number }> = [];
   for (const row of tableData) {
     const breakdown = 'modelBreakdown' in row ? row.modelBreakdown : undefined;
@@ -405,20 +404,22 @@ function App() {
       ? { all: snapshot?.daily?.['all_daily'] }
       : { [`${source}_daily`]: snapshot?.daily?.[`${source}_daily`] };
 
+  const currentTabLabel = REPORT_TABS.find((r) => r.key === tab)?.label ?? tab;
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b px-4 sm:px-6 py-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <h1 className="text-2xl font-semibold">LLM Usage Dashboard</h1>
+          <h1 className="text-2xl font-semibold">{t('app.title')}</h1>
           <div className="flex items-center gap-4">
             {snapshot?.lastSuccess && (
               <span className="text-sm text-muted-foreground hidden sm:inline">
-                Updated: {new Date(snapshot.lastSuccess).toLocaleString()}
+                {t('header.updated')}{new Date(snapshot.lastSuccess).toLocaleString()}
               </span>
             )}
             <Button onClick={handleRefresh} disabled={loading} size="sm">
               <RefreshCw className={cn('mr-2 h-4 w-4', loading && 'animate-spin')} />
-              {loading ? 'Refreshing...' : 'Refresh'}
+              {loading ? t('btn.refreshing') : t('btn.refresh')}
             </Button>
           </div>
         </div>
@@ -431,23 +432,23 @@ function App() {
 
         {loading && refreshStatus?.isRefreshing && (
           <div className="mt-2 rounded-md bg-blue-500/10 p-3 text-sm text-blue-500">
-            Refreshing data in background...
+            {t('status.refreshing')}
           </div>
         )}
       </header>
 
       <main className="px-4 sm:px-6 py-6 space-y-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-          <SourceCombobox value={source} onValueChange={setSource} />
+          <SourceCombobox value={source} onValueChange={setSource} sources={SOURCES} />
 
           <Tabs
             value={tab}
             onValueChange={(v) => setTab(v as ReportType)}
           >
             <TabsList>
-              {REPORT_TABS.map((t) => (
-                <TabsTrigger key={t.key} value={t.key}>
-                  {t.label}
+              {REPORT_TABS.map((r) => (
+                <TabsTrigger key={r.key} value={r.key}>
+                  {r.label}
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -463,7 +464,7 @@ function App() {
                   className="h-7 px-2 text-xs"
                 >
                   <Layers className="h-3 w-3 mr-1" />
-                  Token Type
+                  {t('chart.tokenType')}
                 </Button>
                 <Button
                   variant={segmentMode === 'agent-source' ? 'default' : 'ghost'}
@@ -473,7 +474,7 @@ function App() {
                   disabled={source !== 'all'}
                 >
                   <Users className="h-3 w-3 mr-1" />
-                  Agent Source
+                  {t('chart.agentSource')}
                 </Button>
               </div>
             )}
@@ -500,11 +501,11 @@ function App() {
           <div className="space-y-2">
             {selectedDate && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <span>Viewing {selectedDate}</span>
+                <span>{t('mosaic.viewing', { date: selectedDate })}</span>
                 <button
                   onClick={() => setSelectedDate(null)}
                   className="rounded-sm opacity-70 hover:opacity-100"
-                  aria-label="Back to today"
+                  aria-label={t('btn.backToday')}
                 >
                   ×
                 </button>
@@ -512,30 +513,30 @@ function App() {
             )}
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
               <MetricCard
-                title="Total Tokens"
+                title={t('metric.totalTokens')}
                 value={activeTotals.totalTokens}
                 total={dailyTotals?.totalTokens}
               />
               <MetricCard
-                title="Input"
+                title={t('metric.input')}
                 value={activeTotals.inputTokens}
                 total={dailyTotals?.inputTokens}
               />
               <MetricCard
-                title="Cache Hit"
+                title={t('metric.cacheHit')}
                 value={activeTotals.cacheReadTokens}
                 total={dailyTotals?.cacheReadTokens}
                 tooltip={cacheHitTooltip}
               />
               <MetricCard
-                title="Output"
+                title={t('metric.output')}
                 value={activeTotals.outputTokens}
                 total={dailyTotals?.outputTokens}
               />
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Est. Cost
+                    {t('metric.cost')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -559,7 +560,7 @@ function App() {
                         <div className="text-2xl font-bold">
                           {formatCost(activeCost.cost)}
                           {!activeCost.matched && pricing && (
-                            <span className="text-xs text-muted-foreground ml-2">(default)</span>
+                            <span className="text-xs text-muted-foreground ml-2">{t('metric.costDefault')}</span>
                           )}
                         </div>
                         <div className="text-xs text-muted-foreground mt-0.5">
@@ -576,7 +577,7 @@ function App() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Usage Mosaic</CardTitle>
+            <CardTitle>{t('mosaic.title')}</CardTitle>
           </CardHeader>
           <CardContent>
             <ContributionCalendar
@@ -590,7 +591,7 @@ function App() {
         <Card>
           <CardHeader>
             <CardTitle>
-              {REPORT_TABS.find((t) => t.key === tab)?.label} Report
+              {t('report.title', { tab: currentTabLabel })}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -610,7 +611,7 @@ function App() {
 
         {snapshot?.status === 'nodata' && !loading && (
           <div className="text-center py-12 text-muted-foreground">
-            No data available. Click Refresh to fetch usage data.
+            {t('status.noData')}
           </div>
         )}
       </main>
