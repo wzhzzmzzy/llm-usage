@@ -6,7 +6,38 @@ use llm_usage::core::adapter::opencode::OpenCodeAdapter;
 use llm_usage::core::model::*;
 use llm_usage::core::normalize::*;
 use serde::Serialize;
+use serde::Deserialize;
+use std::fs;
+use std::path::PathBuf;
 use std::sync::Mutex;
+
+#[derive(Serialize, Deserialize, Default, Clone)]
+struct AppConfig {
+    #[serde(default)]
+    language: String,
+}
+
+fn config_path() -> Option<PathBuf> {
+    dirs::config_dir().map(|d| d.join("llm-usage").join("config.json"))
+}
+
+fn load_config() -> AppConfig {
+    config_path()
+        .and_then(|p| fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str::<AppConfig>(&s).ok())
+        .unwrap_or_default()
+}
+
+fn save_config(config: &AppConfig) {
+    if let Some(path) = config_path() {
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if let Ok(json) = serde_json::to_string_pretty(config) {
+            let _ = fs::write(path, json);
+        }
+    }
+}
 
 struct AppState {
     entries: Mutex<Option<CachedEntries>>,
@@ -330,6 +361,11 @@ fn refresh_status(state: tauri::State<'_, AppState>) -> RefreshStatus {
 }
 
 #[tauri::command]
+fn get_language() -> String {
+    load_config().language
+}
+
+#[tauri::command]
 fn health() -> serde_json::Value {
     serde_json::json!({
         "status": "healthy",
@@ -349,8 +385,42 @@ pub fn run() {
             health,
             refresh,
             refresh_status,
-            get_snapshot
+            get_snapshot,
+            get_language
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_appconfig_default_language_is_empty() {
+        let config = AppConfig::default();
+        assert_eq!(config.language, "");
+    }
+
+    #[test]
+    fn test_appconfig_serialization_roundtrip() {
+        let config = AppConfig { language: "zh-CN".to_string() };
+        let json = serde_json::to_string(&config).unwrap();
+        let parsed: AppConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.language, "zh-CN");
+    }
+
+    #[test]
+    fn test_appconfig_deserialize_empty_json() {
+        // config.json 不含 language 字段时应使用默认空字符串
+        let config: AppConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(config.language, "");
+    }
+
+    #[test]
+    fn test_appconfig_deserialize_unknown_fields_ignored() {
+        // 未来加入新字段时旧版本能容错
+        let config: AppConfig = serde_json::from_str(r#"{"language":"ja","theme":"dark"}"#).unwrap();
+        assert_eq!(config.language, "ja");
+    }
 }
