@@ -9,6 +9,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import type { DailyRow, MonthlyRow, SessionRow, BlockRow, Snapshot, PricingMap, ModelBreakdown } from '../api/types';
+import { useTranslation } from '@/i18n/context';
 
 interface UsageChartProps {
   data: DailyRow[] | MonthlyRow[] | SessionRow[] | BlockRow[];
@@ -65,6 +66,7 @@ function estimateRowCost(
 }
 
 function CustomTooltip({ active, payload, label }: any) {
+  const { t } = useTranslation();
   if (!active || !payload) return null;
   const costEntry = payload.find((e: any) => e.dataKey === 'cost');
   return (
@@ -77,7 +79,7 @@ function CustomTooltip({ active, payload, label }: any) {
       ))}
       {costEntry && (
         <p className="text-sm font-medium mt-1 pt-1 border-t">
-          Est. Cost: {fmtCost(costEntry.value)}
+          {t('chart.tooltip.cost')}{fmtCost(costEntry.value)}
         </p>
       )}
     </div>
@@ -223,10 +225,12 @@ function getChartDataByAgentSource(
 }
 
 export function UsageChart({ data, type, snapshot, segmentMode = 'token-type', pricing }: UsageChartProps) {
+  const { t } = useTranslation();
+
   if (data.length === 0) {
     return (
       <div className="flex h-[300px] items-center justify-center text-muted-foreground">
-        No data available
+        {t('chart.noData')}
       </div>
     );
   }
@@ -240,7 +244,7 @@ export function UsageChart({ data, type, snapshot, segmentMode = 'token-type', p
   if (chartData.length === 0) {
     return (
       <div className="flex h-[300px] items-center justify-center text-muted-foreground">
-        No data available
+        {t('chart.noData')}
       </div>
     );
   }
@@ -305,26 +309,26 @@ export function UsageChart({ data, type, snapshot, segmentMode = 'token-type', p
         <Legend />
         <Bar
           dataKey="input"
-          name="Input"
+          name={t('chart.bar.input')}
           stackId="tokens"
           fill="var(--color-chart-1)"
           radius={[0, 0, 0, 0]}
         />
         <Bar
           dataKey="cache"
-          name="Cache Hit"
+          name={t('chart.bar.cacheHit')}
           stackId="tokens"
           fill="var(--color-chart-2)"
           radius={[0, 0, 0, 0]}
         />
         <Bar
           dataKey="output"
-          name="Output"
+          name={t('chart.bar.output')}
           stackId="tokens"
           fill="var(--color-chart-3)"
           radius={[4, 4, 0, 0]}
         />
-        <Bar dataKey="cost" name="Est. Cost" hide />
+        <Bar dataKey="cost" name={t('chart.bar.cost')} hide />
       </BarChart>
     </ResponsiveContainer>
   );
