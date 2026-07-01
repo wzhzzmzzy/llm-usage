@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { HttpUsageApi } from './api/http-usage-api';
 import type { Snapshot, Source, ReportType, UsageApi, RefreshStatus, PricingMap, ModelPricing } from './api/types';
 import { ContributionCalendar } from './components/contribution-calendar';
@@ -30,6 +30,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useTranslation } from './i18n/context';
+import { makeRange, dayCount } from '@/lib/selection';
+import type { Selection } from '@/lib/selection';
 
 let tauriInvoke: ((cmd: string, args?: Record<string, unknown>) => Promise<any>) | null = null;
 
@@ -221,9 +223,19 @@ function App() {
   const [tab, setTab] = useState<ReportType>('daily');
   const [view, setView] = useState<'table' | 'chart'>('table');
   const [segmentMode, setSegmentMode] = useState<'token-type' | 'agent-source'>('token-type');
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selection, setSelection] = useState<Selection>({ type: 'none' });
   const hasRefreshed = useRef(false);
   const pollIntervalRef = useRef<number | null>(null);
+
+  const handleDayClick = useCallback((date: string) => {
+    setSelection((prev) => {
+      if (prev.type === 'none' || prev.type === 'range') {
+        return { type: 'pending', start: date };
+      }
+      // pending → confirm range (auto-sorted)
+      return makeRange(prev.start, date);
+    });
+  }, []);
 
   const SOURCES: { value: Source; label: string }[] = [
     { value: 'all', label: t('source.all') },
@@ -320,16 +332,54 @@ function App() {
   const allDailyData = snapshot?.daily?.[`${sourceKey}_daily`];
   const dailyTotals = allDailyData?.totals;
 
-  const activeRow = allDailyData?.days.find(
-    (d) => d.date === (selectedDate ?? today)
-  );
+  const { activeTotals, activeModelBreakdown } = useMemo(() => {
+    if (selection.type === 'range') {
+      const inRange = allDailyData?.days.filter(
+        (d) => d.date >= selection.start && d.date <= selection.end,
+      ) ?? [];
 
-  const activeTotals = {
-    totalTokens: activeRow?.totalTokens ?? 0,
-    inputTokens: activeRow?.inputTokens ?? 0,
-    cacheReadTokens: activeRow?.cacheReadTokens ?? 0,
-    outputTokens: activeRow?.outputTokens ?? 0,
-  };
+      const totals = {
+        totalTokens: inRange.reduce((s, r) => s + (r.totalTokens ?? 0), 0),
+        inputTokens: inRange.reduce((s, r) => s + (r.inputTokens ?? 0), 0),
+        cacheReadTokens: inRange.reduce((s, r) => s + (r.cacheReadTokens ?? 0), 0),
+        outputTokens: inRange.reduce((s, r) => s + (r.outputTokens ?? 0), 0),
+      };
+
+      const breakdown: Array<{
+        model: string;
+        inputTokens: number;
+        outputTokens: number;
+        cacheReadTokens: number;
+      }> = [];
+      for (const row of inRange) {
+        for (const item of row.modelBreakdown ?? []) {
+          const existing = breakdown.find((a) => a.model === item.model);
+          if (existing) {
+            existing.inputTokens += item.inputTokens;
+            existing.outputTokens += item.outputTokens;
+            existing.cacheReadTokens += item.cacheReadTokens;
+          } else {
+            breakdown.push({ ...item });
+          }
+        }
+      }
+
+      return { activeTotals: totals, activeModelBreakdown: breakdown };
+    }
+
+    // pending or none: use single day
+    const activeDate = selection.type === 'pending' ? selection.start : today;
+    const row = allDailyData?.days.find((d) => d.date === activeDate);
+    return {
+      activeTotals: {
+        totalTokens: row?.totalTokens ?? 0,
+        inputTokens: row?.inputTokens ?? 0,
+        cacheReadTokens: row?.cacheReadTokens ?? 0,
+        outputTokens: row?.outputTokens ?? 0,
+      },
+      activeModelBreakdown: row?.modelBreakdown ?? [],
+    };
+  }, [selection, allDailyData, today]);
 
   const allDailyAggregatedBreakdown: Array<{
     model: string;
@@ -499,11 +549,19 @@ function App() {
 
         {(activeTotals || dailyTotals) && (
           <div className="space-y-2">
-            {selectedDate && (
+            {selection.type !== 'none' && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <span>{t('mosaic.viewing', { date: selectedDate })}</span>
+                <span>
+                  {selection.type === 'pending'
+                    ? t('mosaic.viewing', { date: selection.start })
+                    : t('mosaic.range', {
+                        start: selection.start,
+                        end: selection.end,
+                        days: dayCount(selection.start, selection.end),
+                      })}
+                </span>
                 <button
-                  onClick={() => setSelectedDate(null)}
+                  onClick={() => setSelection({ type: 'none' })}
                   className="rounded-sm opacity-70 hover:opacity-100"
                   aria-label={t('btn.backToday')}
                 >
@@ -545,7 +603,7 @@ function App() {
                       activeTotals.inputTokens,
                       activeTotals.outputTokens,
                       activeTotals.cacheReadTokens,
-                      activeRow?.modelBreakdown ?? [],
+                      activeModelBreakdown,
                       pricing
                     );
                     const totalCost = estimateCost(
@@ -582,7 +640,8 @@ function App() {
           <CardContent>
             <ContributionCalendar
               data={calendarData as any}
-              onDayClick={setSelectedDate}
+              selection={selection}
+              onDayClick={handleDayClick}
               pricing={pricing}
             />
           </CardContent>
