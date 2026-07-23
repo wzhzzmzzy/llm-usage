@@ -10,7 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { ChevronDown, Layers, Cpu } from 'lucide-react';
+import { ChevronDown, Bot, Brain } from 'lucide-react';
 
 interface UsageTableProps {
   data: DailyRow[] | MonthlyRow[] | SessionRow[] | BlockRow[];
@@ -76,7 +76,7 @@ function ExpandButton({
   type: 'source' | 'model';
 }) {
   const { t } = useTranslation();
-  const Icon = type === 'source' ? Layers : Cpu;
+  const Icon = type === 'source' ? Bot : Brain;
   const expandedIcon = <ChevronDown className="h-3.5 w-3.5" />;
   const collapsedIcon = <Icon className="h-3.5 w-3.5" />;
 
