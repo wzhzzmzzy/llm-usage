@@ -92,8 +92,9 @@ function formatCost(n: number | undefined): string {
 function estimateCost(
   inputTokens: number,
   outputTokens: number,
+  reasoningTokens: number,
   cacheReadTokens: number,
-  modelBreakdown: Array<{ model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number }> | undefined,
+  modelBreakdown: Array<{ model: string; inputTokens: number; outputTokens: number; reasoningTokens: number; cacheReadTokens: number }> | undefined,
   pricing: PricingMap | null
 ): { cost: number; matched: boolean } {
   const defaultPricing: ModelPricing = { input: 3e-6, output: 15e-6, cacheCreate: 3.75e-6, cacheRead: 0.3e-6 };
@@ -117,7 +118,7 @@ function estimateCost(
       if (matched) anyMatched = true;
       return total
         + item.inputTokens * p.input
-        + item.outputTokens * p.output
+        + (item.outputTokens + item.reasoningTokens) * p.output
         + item.cacheReadTokens * p.cacheRead;
     }, 0);
     return { cost, matched: anyMatched };
@@ -125,7 +126,7 @@ function estimateCost(
 
   const p = defaultPricing;
   return {
-    cost: inputTokens * p.input + outputTokens * p.output + cacheReadTokens * p.cacheRead,
+    cost: inputTokens * p.input + (outputTokens + reasoningTokens) * p.output + cacheReadTokens * p.cacheRead,
     matched: false
   };
 }
@@ -343,12 +344,14 @@ function App() {
         inputTokens: inRange.reduce((s, r) => s + (r.inputTokens ?? 0), 0),
         cacheReadTokens: inRange.reduce((s, r) => s + (r.cacheReadTokens ?? 0), 0),
         outputTokens: inRange.reduce((s, r) => s + (r.outputTokens ?? 0), 0),
+        reasoningTokens: inRange.reduce((s, r) => s + (r.reasoningTokens ?? 0), 0),
       };
 
       const breakdown: Array<{
         model: string;
         inputTokens: number;
         outputTokens: number;
+        reasoningTokens: number;
         cacheReadTokens: number;
       }> = [];
       for (const row of inRange) {
@@ -357,6 +360,7 @@ function App() {
           if (existing) {
             existing.inputTokens += item.inputTokens;
             existing.outputTokens += item.outputTokens;
+            existing.reasoningTokens += item.reasoningTokens;
             existing.cacheReadTokens += item.cacheReadTokens;
           } else {
             breakdown.push({ ...item });
@@ -376,6 +380,7 @@ function App() {
         inputTokens: row?.inputTokens ?? 0,
         cacheReadTokens: row?.cacheReadTokens ?? 0,
         outputTokens: row?.outputTokens ?? 0,
+        reasoningTokens: row?.reasoningTokens ?? 0,
       },
       activeModelBreakdown: row?.modelBreakdown ?? [],
     };
@@ -385,6 +390,7 @@ function App() {
     model: string;
     inputTokens: number;
     outputTokens: number;
+    reasoningTokens: number;
     cacheReadTokens: number;
   }> = [];
   for (const row of allDailyData?.days ?? []) {
@@ -394,12 +400,14 @@ function App() {
       if (existing) {
         existing.inputTokens += item.inputTokens;
         existing.outputTokens += item.outputTokens;
+        existing.reasoningTokens += item.reasoningTokens;
         existing.cacheReadTokens += item.cacheReadTokens;
       } else {
         allDailyAggregatedBreakdown.push({
           model: item.model,
           inputTokens: item.inputTokens,
           outputTokens: item.outputTokens,
+          reasoningTokens: item.reasoningTokens,
           cacheReadTokens: item.cacheReadTokens,
         });
       }
@@ -428,7 +436,7 @@ function App() {
     : tab === 'session' ? sessionData?.sessions ?? []
     : blocksData?.blocks ?? [];
 
-  const aggregatedModelBreakdown: Array<{ model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number }> = [];
+  const aggregatedModelBreakdown: Array<{ model: string; inputTokens: number; outputTokens: number; reasoningTokens: number; cacheReadTokens: number }> = [];
   for (const row of tableData) {
     const breakdown = 'modelBreakdown' in row ? row.modelBreakdown : undefined;
     if (!breakdown) continue;
@@ -437,12 +445,14 @@ function App() {
       if (existing) {
         existing.inputTokens += item.inputTokens;
         existing.outputTokens += item.outputTokens;
+        existing.reasoningTokens += item.reasoningTokens;
         existing.cacheReadTokens += item.cacheReadTokens;
       } else {
         aggregatedModelBreakdown.push({
           model: item.model,
           inputTokens: item.inputTokens,
           outputTokens: item.outputTokens,
+          reasoningTokens: item.reasoningTokens,
           cacheReadTokens: item.cacheReadTokens,
         });
       }
@@ -569,7 +579,7 @@ function App() {
                 </button>
               </div>
             )}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-6 gap-4">
               <MetricCard
                 title={t('metric.totalTokens')}
                 value={activeTotals.totalTokens}
@@ -591,6 +601,11 @@ function App() {
                 value={activeTotals.outputTokens}
                 total={dailyTotals?.outputTokens}
               />
+              <MetricCard
+                title={t('metric.reasoning')}
+                value={activeTotals.reasoningTokens}
+                total={dailyTotals?.reasoningTokens}
+              />
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -602,6 +617,7 @@ function App() {
                     const activeCost = estimateCost(
                       activeTotals.inputTokens,
                       activeTotals.outputTokens,
+                      activeTotals.reasoningTokens,
                       activeTotals.cacheReadTokens,
                       activeModelBreakdown,
                       pricing
@@ -609,6 +625,7 @@ function App() {
                     const totalCost = estimateCost(
                       dailyTotals?.inputTokens ?? 0,
                       dailyTotals?.outputTokens ?? 0,
+                      dailyTotals?.reasoningTokens ?? 0,
                       dailyTotals?.cacheReadTokens ?? 0,
                       allDailyAggregatedBreakdown,
                       pricing

@@ -2,7 +2,7 @@
 
 ## Active Period
 
-The time window currently reflected in the metric cards (Total Tokens, Input, Cache Hit, Output, Est. Cost).
+The time window currently reflected in the metric cards (Total Tokens, Input, Cache Hit, Output, Reasoning, Est. Cost).
 
 Derived from the current **Date Selection**:
 - No selection → today's date

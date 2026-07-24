@@ -40,18 +40,31 @@ impl NativeUsageProvider {
     pub async fn preload(&self) {
         let start = std::time::Instant::now();
 
-        let mut cache = self.source_cache.write().await;
-        for adapter in &self.adapters {
-            let source = adapter.source();
-            let adapter_start = std::time::Instant::now();
-            let entries = match adapter.find_data_paths() {
-                Ok(paths) => adapter.load_entries(&paths).unwrap_or_default(),
-                Err(_) => Vec::new(),
-            };
-            let entry_count = entries.len();
+        let mut handles = Vec::new();
+        for source in [Source::Claude, Source::Codex, Source::Gemini, Source::Opencode] {
+            handles.push(tokio::task::spawn_blocking(move || {
+                let adapter_start = std::time::Instant::now();
+                let adapter: Box<dyn UsageAdapter> = match source {
+                    Source::Claude => Box::new(ClaudeAdapter::new()),
+                    Source::Codex => Box::new(CodexAdapter::new()),
+                    Source::Gemini => Box::new(GeminiAdapter::new()),
+                    Source::Opencode => Box::new(OpenCodeAdapter::new()),
+                    Source::All => unreachable!("All is not a data source"),
+                };
+                let entries = match adapter.find_data_paths() {
+                    Ok(paths) => adapter.load_entries(&paths).unwrap_or_default(),
+                    Err(_) => Vec::new(),
+                };
+                (source, entries, adapter_start.elapsed())
+            }));
+        }
 
-            tracing::info!("{:?} adapter: {} entries loaded, {:?}", source, entry_count, adapter_start.elapsed());
-            cache.insert(source, SourceCache { entries });
+        let mut cache = self.source_cache.write().await;
+        for handle in handles {
+            if let Ok((source, entries, elapsed)) = handle.await {
+                tracing::info!("{:?} adapter: {} entries loaded, {:?}", source, entries.len(), elapsed);
+                cache.insert(source, SourceCache { entries });
+            }
         }
 
         tracing::info!("total preload: {:?}, {} total entries", start.elapsed(),

@@ -24,6 +24,7 @@ const en = {
   'metric.input': 'Input',
   'metric.cacheHit': 'Cache Hit',
   'metric.output': 'Output',
+  'metric.reasoning': 'Reasoning',
   'metric.cost': 'Est. Cost',
   'metric.costDefault': '(default)',
   // Mosaic / report
@@ -44,6 +45,7 @@ const en = {
   'table.input': 'Input',
   'table.cacheHit': 'Cache Hit',
   'table.output': 'Output',
+  'table.reasoning': 'Reasoning',
   'table.cost': 'Cost',
   'table.models': 'Models',
   'table.session': 'Session',
@@ -68,6 +70,7 @@ const en = {
   'chart.bar.input': 'Input',
   'chart.bar.cacheHit': 'Cache Hit',
   'chart.bar.output': 'Output',
+  'chart.bar.reasoning': 'Reasoning',
   'chart.bar.cost': 'Est. Cost',
   'chart.tooltip.cost': 'Est. Cost: ',
   // Calendar
@@ -78,6 +81,7 @@ const en = {
   'cal.input': 'Input: ',
   'cal.cacheHit': 'Cache Hit: ',
   'cal.output': 'Output: ',
+  'cal.reasoning': 'Reasoning: ',
   'cal.cost': 'Cost: ',
   // Tray
   'tray.quit': 'Quit',

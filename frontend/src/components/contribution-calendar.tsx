@@ -18,6 +18,7 @@ interface DayData {
   inputTokens: number;
   cacheReadTokens: number;
   outputTokens: number;
+  reasoningTokens: number;
   models: string[];
   modelBreakdown?: ModelBreakdown[];
 }
@@ -65,11 +66,11 @@ function estimateDayCost(day: DayData, pricing: PricingMap | null | undefined): 
   if (day.modelBreakdown && day.modelBreakdown.length > 0) {
     return day.modelBreakdown.reduce((total, mb) => {
       const p = findModelPricing(mb.model, pricing);
-      return total + mb.inputTokens * p.input + mb.outputTokens * p.output + mb.cacheReadTokens * p.cacheRead;
+      return total + mb.inputTokens * p.input + (mb.outputTokens + mb.reasoningTokens) * p.output + mb.cacheReadTokens * p.cacheRead;
     }, 0);
   }
   const p = DEFAULT_PRICING;
-  return day.inputTokens * p.input + day.outputTokens * p.output + day.cacheReadTokens * p.cacheRead;
+  return day.inputTokens * p.input + (day.outputTokens + day.reasoningTokens) * p.output + day.cacheReadTokens * p.cacheRead;
 }
 
 function getIntensity(tokens: number): number {
@@ -129,6 +130,7 @@ export function ContributionCalendar({ data, selection = { type: 'none' }, onDay
         inputTokens: day?.inputTokens ?? 0,
         cacheReadTokens: day?.cacheReadTokens ?? 0,
         outputTokens: day?.outputTokens ?? 0,
+        reasoningTokens: day?.reasoningTokens ?? 0,
         models: day?.modelsUsed ?? [],
         modelBreakdown: day?.modelBreakdown,
       });
@@ -302,6 +304,7 @@ export function ContributionCalendar({ data, selection = { type: 'none' }, onDay
             <div>{t('cal.input')}<span className="text-gray-900">{tooltip.day.inputTokens.toLocaleString()}</span></div>
             <div>{t('cal.cacheHit')}<span className="text-gray-900">{tooltip.day.cacheReadTokens.toLocaleString()}</span></div>
             <div>{t('cal.output')}<span className="text-gray-900">{tooltip.day.outputTokens.toLocaleString()}</span></div>
+            <div>{t('cal.reasoning')}<span className="text-gray-900">{tooltip.day.reasoningTokens.toLocaleString()}</span></div>
             <div>{t('cal.cost')}<span className="text-gray-900 font-medium">{fmtCost(estimateDayCost(tooltip.day, pricing))}</span></div>
             {tooltip.day.models.length > 0 && (
               <div className="mt-1 pt-1 border-t border-gray-200">

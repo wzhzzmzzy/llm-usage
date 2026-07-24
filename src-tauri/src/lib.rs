@@ -79,6 +79,8 @@ struct RefreshStatus {
 }
 
 fn load_all_entries() -> Vec<(Source, Vec<UsageEntry>)> {
+    use rayon::prelude::*;
+
     let adapters: Vec<Box<dyn UsageAdapter>> = vec![
         Box::new(ClaudeAdapter::new()),
         Box::new(CodexAdapter::new()),
@@ -87,7 +89,7 @@ fn load_all_entries() -> Vec<(Source, Vec<UsageEntry>)> {
     ];
 
     adapters
-        .into_iter()
+        .into_par_iter()
         .filter_map(|adapter| {
             let source = adapter.source();
             let paths = adapter.find_data_paths().ok()?;
@@ -130,6 +132,7 @@ fn build_snapshot(cached: &CachedEntries) -> Snapshot {
             input_tokens: a.input_tokens,
             cache_read_tokens: a.cache_read_tokens,
             output_tokens: a.output_tokens,
+            reasoning_tokens: a.reasoning_tokens,
             request_count: Some(a.request_count),
             models_used: Some(a.models_used.clone()),
             model_breakdown: Some(a.model_breakdown.clone()),
@@ -141,6 +144,7 @@ fn build_snapshot(cached: &CachedEntries) -> Snapshot {
             input_tokens: a.input_tokens,
             cache_read_tokens: a.cache_read_tokens,
             output_tokens: a.output_tokens,
+            reasoning_tokens: a.reasoning_tokens,
             request_count: Some(a.request_count),
             models_used: Some(a.models_used.clone()),
             model_breakdown: Some(a.model_breakdown.clone()),
@@ -153,6 +157,7 @@ fn build_snapshot(cached: &CachedEntries) -> Snapshot {
             input_tokens: a.input_tokens,
             cache_read_tokens: a.cache_read_tokens,
             output_tokens: a.output_tokens,
+            reasoning_tokens: a.reasoning_tokens,
             request_count: Some(a.request_count),
             last_activity: a.last_activity.clone(),
             models_used: Some(a.models_used.clone()),
@@ -169,6 +174,7 @@ fn build_snapshot(cached: &CachedEntries) -> Snapshot {
             input_tokens: a.input_tokens,
             cache_read_tokens: a.cache_read_tokens,
             output_tokens: a.output_tokens,
+            reasoning_tokens: a.reasoning_tokens,
             request_count: Some(a.request_count),
             models_used: Some(a.models_used.clone()),
             model_breakdown: Some(a.model_breakdown.clone()),
@@ -212,6 +218,7 @@ fn build_snapshot(cached: &CachedEntries) -> Snapshot {
         input_tokens: a.input_tokens,
         cache_read_tokens: a.cache_read_tokens,
         output_tokens: a.output_tokens,
+        reasoning_tokens: a.reasoning_tokens,
         request_count: Some(a.request_count),
         models_used: Some(a.models_used.clone()),
         model_breakdown: Some(a.model_breakdown.clone()),
@@ -223,6 +230,7 @@ fn build_snapshot(cached: &CachedEntries) -> Snapshot {
         input_tokens: a.input_tokens,
         cache_read_tokens: a.cache_read_tokens,
         output_tokens: a.output_tokens,
+        reasoning_tokens: a.reasoning_tokens,
         request_count: Some(a.request_count),
         models_used: Some(a.models_used.clone()),
         model_breakdown: Some(a.model_breakdown.clone()),
@@ -235,6 +243,7 @@ fn build_snapshot(cached: &CachedEntries) -> Snapshot {
         input_tokens: a.input_tokens,
         cache_read_tokens: a.cache_read_tokens,
         output_tokens: a.output_tokens,
+        reasoning_tokens: a.reasoning_tokens,
         request_count: Some(a.request_count),
         last_activity: a.last_activity.clone(),
         models_used: Some(a.models_used.clone()),
@@ -251,6 +260,7 @@ fn build_snapshot(cached: &CachedEntries) -> Snapshot {
         input_tokens: a.input_tokens,
         cache_read_tokens: a.cache_read_tokens,
         output_tokens: a.output_tokens,
+        reasoning_tokens: a.reasoning_tokens,
         request_count: Some(a.request_count),
         models_used: Some(a.models_used.clone()),
         model_breakdown: Some(a.model_breakdown.clone()),

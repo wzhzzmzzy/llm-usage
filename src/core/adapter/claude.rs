@@ -51,21 +51,22 @@ impl UsageAdapter for ClaudeAdapter {
     }
 
     fn load_entries(&self, paths: &[PathBuf]) -> Result<Vec<UsageEntry>, Box<dyn std::error::Error>> {
-        let mut entries = Vec::new();
+        use rayon::prelude::*;
 
+        let mut all_files = Vec::new();
         for base_path in paths {
             let projects_dir = base_path.join("projects");
             if !projects_dir.is_dir() {
                 continue;
             }
-
-            let files = collect_jsonl_files(&projects_dir);
-            for file in files {
-                if let Ok(file_entries) = parse_claude_jsonl(&file) {
-                    entries.extend(file_entries);
-                }
-            }
+            all_files.extend(collect_jsonl_files(&projects_dir));
         }
+
+        let entries = all_files
+            .par_iter()
+            .filter_map(|file| parse_claude_jsonl(file).ok())
+            .flatten()
+            .collect();
 
         Ok(entries)
     }
@@ -87,6 +88,7 @@ impl UsageAdapter for ClaudeAdapter {
                 let input_tokens: u64 = day_entries.iter().map(|e| e.input_tokens).sum();
                 let cache_read_tokens: u64 = day_entries.iter().map(|e| e.cache_read_tokens).sum();
                 let output_tokens: u64 = day_entries.iter().map(|e| e.output_tokens).sum();
+                let reasoning_tokens: u64 = day_entries.iter().map(|e| e.reasoning_tokens).sum();
                 let request_count = day_entries.len() as u64;
 
                 let mut models_used: Vec<String> = day_entries
@@ -107,6 +109,7 @@ impl UsageAdapter for ClaudeAdapter {
                     input_tokens,
                     cache_read_tokens,
                     output_tokens,
+                    reasoning_tokens,
                     request_count,
                     models_used,
                     model_breakdown,
@@ -135,6 +138,7 @@ impl UsageAdapter for ClaudeAdapter {
                 let input_tokens: u64 = month_entries.iter().map(|e| e.input_tokens).sum();
                 let cache_read_tokens: u64 = month_entries.iter().map(|e| e.cache_read_tokens).sum();
                 let output_tokens: u64 = month_entries.iter().map(|e| e.output_tokens).sum();
+                let reasoning_tokens: u64 = month_entries.iter().map(|e| e.reasoning_tokens).sum();
                 let request_count = month_entries.len() as u64;
 
                 let mut models_used: Vec<String> = month_entries
@@ -155,6 +159,7 @@ impl UsageAdapter for ClaudeAdapter {
                     input_tokens,
                     cache_read_tokens,
                     output_tokens,
+                    reasoning_tokens,
                     request_count,
                     models_used,
                     model_breakdown,
@@ -185,6 +190,7 @@ impl UsageAdapter for ClaudeAdapter {
                 let input_tokens: u64 = session_entries.iter().map(|e| e.input_tokens).sum();
                 let cache_read_tokens: u64 = session_entries.iter().map(|e| e.cache_read_tokens).sum();
                 let output_tokens: u64 = session_entries.iter().map(|e| e.output_tokens).sum();
+                let reasoning_tokens: u64 = session_entries.iter().map(|e| e.reasoning_tokens).sum();
                 let request_count = session_entries.len() as u64;
 
                 let last_activity = session_entries
@@ -216,6 +222,7 @@ impl UsageAdapter for ClaudeAdapter {
                     input_tokens,
                     cache_read_tokens,
                     output_tokens,
+                    reasoning_tokens,
                     request_count,
                     last_activity,
                     models_used,
@@ -300,6 +307,12 @@ fn parse_claude_jsonl(path: &Path) -> Result<Vec<UsageEntry>, Box<dyn std::error
             continue;
         }
 
+        // Skip the full JSON parse unless the line can carry usage data or
+        // the cwd still being looked for.
+        if !line.contains("\"usage\"") && !(project_path.is_none() && line.contains("\"cwd\"")) {
+            continue;
+        }
+
         let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
@@ -359,6 +372,8 @@ fn parse_claude_jsonl(path: &Path) -> Result<Vec<UsageEntry>, Box<dyn std::error
                 model,
                 input_tokens,
                 output_tokens,
+                // Claude's usage.output_tokens already includes thinking tokens
+                reasoning_tokens: 0,
                 cache_creation_tokens,
                 cache_read_tokens,
                 total_tokens,

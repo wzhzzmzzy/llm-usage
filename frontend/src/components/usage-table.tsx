@@ -48,6 +48,7 @@ function findModelPricing(model: string, pricing: PricingMap | null | undefined)
 function estimateRowCost(
   inputTokens: number,
   outputTokens: number,
+  reasoningTokens: number,
   cacheReadTokens: number,
   modelBreakdown?: ModelBreakdown[] | null,
   pricing?: PricingMap | null,
@@ -55,11 +56,11 @@ function estimateRowCost(
   if (modelBreakdown && modelBreakdown.length > 0) {
     return modelBreakdown.reduce((total, mb) => {
       const p = findModelPricing(mb.model, pricing);
-      return total + mb.inputTokens * p.input + mb.outputTokens * p.output + mb.cacheReadTokens * p.cacheRead;
+      return total + mb.inputTokens * p.input + (mb.outputTokens + mb.reasoningTokens) * p.output + mb.cacheReadTokens * p.cacheRead;
     }, 0);
   }
   const p = DEFAULT_PRICING;
-  return inputTokens * p.input + outputTokens * p.output + cacheReadTokens * p.cacheRead;
+  return inputTokens * p.input + (outputTokens + reasoningTokens) * p.output + cacheReadTokens * p.cacheRead;
 }
 
 interface ExpandedState {
@@ -120,7 +121,7 @@ function SourceBreakdownRow({
         if (!rows || rows.length === 0) return null;
 
         const row = rows[0];
-        const cost = estimateRowCost(row.inputTokens, row.outputTokens, row.cacheReadTokens, row.modelBreakdown, pricing);
+        const cost = estimateRowCost(row.inputTokens, row.outputTokens, row.reasoningTokens ?? 0, row.cacheReadTokens, row.modelBreakdown, pricing);
         return (
           <TableRow key={`${sourceKey}-${src}`} className="bg-muted/30">
             <TableCell className="pl-8 text-muted-foreground">
@@ -133,6 +134,7 @@ function SourceBreakdownRow({
             <TableCell className="text-right text-muted-foreground">{fmt(row.inputTokens)}</TableCell>
             <TableCell className="text-right text-muted-foreground">{fmt(row.cacheReadTokens)}</TableCell>
             <TableCell className="text-right text-muted-foreground">{fmt(row.outputTokens)}</TableCell>
+            <TableCell className="text-right text-muted-foreground">{fmt(row.reasoningTokens)}</TableCell>
             <TableCell className="text-right text-muted-foreground">{fmtCost(cost)}</TableCell>
             <TableCell className="text-muted-foreground max-w-[330px]">
               <span className="block truncate" title={row.modelsUsed?.join(', ')}>
@@ -152,7 +154,7 @@ function ModelBreakdownRows({ breakdown, pricing }: { breakdown: ModelBreakdown[
     <>
       {breakdown.map((mb) => {
         const p = findModelPricing(mb.model, pricing);
-        const cost = mb.inputTokens * p.input + mb.outputTokens * p.output + mb.cacheReadTokens * p.cacheRead;
+        const cost = mb.inputTokens * p.input + (mb.outputTokens + mb.reasoningTokens) * p.output + mb.cacheReadTokens * p.cacheRead;
         return (
           <TableRow key={mb.model} className="bg-muted/30">
             <TableCell className="pl-8 text-muted-foreground">
@@ -165,6 +167,7 @@ function ModelBreakdownRows({ breakdown, pricing }: { breakdown: ModelBreakdown[
             <TableCell className="text-right text-muted-foreground">{fmt(mb.inputTokens)}</TableCell>
             <TableCell className="text-right text-muted-foreground">{fmt(mb.cacheReadTokens)}</TableCell>
             <TableCell className="text-right text-muted-foreground">{fmt(mb.outputTokens)}</TableCell>
+            <TableCell className="text-right text-muted-foreground">{fmt(mb.reasoningTokens)}</TableCell>
             <TableCell className="text-right text-muted-foreground">{fmtCost(cost)}</TableCell>
             <TableCell className="text-muted-foreground">
               {t('table.reqs', { n: fmt(mb.requestCount) })}
@@ -213,6 +216,7 @@ function DailyTable({
           <TableHead className="text-right">{t('table.input')}</TableHead>
           <TableHead className="text-right">{t('table.cacheHit')}</TableHead>
           <TableHead className="text-right">{t('table.output')}</TableHead>
+          <TableHead className="text-right">{t('table.reasoning')}</TableHead>
           <TableHead className="text-right">{t('table.cost')}</TableHead>
           <TableHead className="max-w-[330px]">{t('table.models')}</TableHead>
         </TableRow>
@@ -220,7 +224,7 @@ function DailyTable({
       <TableBody>
         {data.length === 0 ? (
           <TableRow>
-            <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+            <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
               {t('table.noData')}
             </TableCell>
           </TableRow>
@@ -229,7 +233,7 @@ function DailyTable({
             const rowKey = row.date;
             const isExpanded = expanded[rowKey];
             const hasModelBreakdown = row.modelBreakdown && row.modelBreakdown.length > 0;
-            const cost = estimateRowCost(row.inputTokens, row.outputTokens, row.cacheReadTokens, row.modelBreakdown, pricing);
+            const cost = estimateRowCost(row.inputTokens, row.outputTokens, row.reasoningTokens, row.cacheReadTokens, row.modelBreakdown, pricing);
 
             return (
               <>
@@ -263,6 +267,7 @@ function DailyTable({
                   <TableCell className="text-right">{fmt(row.inputTokens)}</TableCell>
                   <TableCell className="text-right">{fmt(row.cacheReadTokens)}</TableCell>
                   <TableCell className="text-right">{fmt(row.outputTokens)}</TableCell>
+                  <TableCell className="text-right">{fmt(row.reasoningTokens)}</TableCell>
                   <TableCell className="text-right">{fmtCost(cost)}</TableCell>
                   <TableCell className="text-muted-foreground max-w-[330px]">
                     <span className="block truncate" title={row.modelsUsed?.join(', ')}>
@@ -347,6 +352,7 @@ function MonthlyTable({
           <TableHead className="text-right">{t('table.input')}</TableHead>
           <TableHead className="text-right">{t('table.cacheHit')}</TableHead>
           <TableHead className="text-right">{t('table.output')}</TableHead>
+          <TableHead className="text-right">{t('table.reasoning')}</TableHead>
           <TableHead className="text-right">{t('table.cost')}</TableHead>
           <TableHead className="max-w-[330px]">{t('table.models')}</TableHead>
         </TableRow>
@@ -354,7 +360,7 @@ function MonthlyTable({
       <TableBody>
         {data.length === 0 ? (
           <TableRow>
-            <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+            <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
               {t('table.noData')}
             </TableCell>
           </TableRow>
@@ -363,7 +369,7 @@ function MonthlyTable({
             const rowKey = row.month;
             const isExpanded = expanded[rowKey];
             const hasModelBreakdown = row.modelBreakdown && row.modelBreakdown.length > 0;
-            const cost = estimateRowCost(row.inputTokens, row.outputTokens, row.cacheReadTokens, row.modelBreakdown, pricing);
+            const cost = estimateRowCost(row.inputTokens, row.outputTokens, row.reasoningTokens, row.cacheReadTokens, row.modelBreakdown, pricing);
 
             return (
               <>
@@ -397,6 +403,7 @@ function MonthlyTable({
                   <TableCell className="text-right">{fmt(row.inputTokens)}</TableCell>
                   <TableCell className="text-right">{fmt(row.cacheReadTokens)}</TableCell>
                   <TableCell className="text-right">{fmt(row.outputTokens)}</TableCell>
+                  <TableCell className="text-right">{fmt(row.reasoningTokens)}</TableCell>
                   <TableCell className="text-right">{fmtCost(cost)}</TableCell>
                   <TableCell className="text-muted-foreground max-w-[330px]">
                     <span className="block truncate" title={row.modelsUsed?.join(', ')}>
@@ -446,6 +453,7 @@ function SessionTable({ data, pricing }: { data: SessionRow[]; pricing?: Pricing
           <TableHead className="text-right">{t('table.input')}</TableHead>
           <TableHead className="text-right">{t('table.cacheHit')}</TableHead>
           <TableHead className="text-right">{t('table.output')}</TableHead>
+          <TableHead className="text-right">{t('table.reasoning')}</TableHead>
           <TableHead className="text-right">{t('table.cost')}</TableHead>
           <TableHead>{t('table.lastActive')}</TableHead>
         </TableRow>
@@ -453,7 +461,7 @@ function SessionTable({ data, pricing }: { data: SessionRow[]; pricing?: Pricing
       <TableBody>
         {data.length === 0 ? (
           <TableRow>
-            <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+            <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
               {t('table.noData')}
             </TableCell>
           </TableRow>
@@ -462,7 +470,7 @@ function SessionTable({ data, pricing }: { data: SessionRow[]; pricing?: Pricing
             const rowKey = row.sessionId;
             const isExpanded = expanded[rowKey];
             const hasModelBreakdown = row.modelBreakdown && row.modelBreakdown.length > 0;
-            const cost = estimateRowCost(row.inputTokens, row.outputTokens, row.cacheReadTokens, row.modelBreakdown, pricing);
+            const cost = estimateRowCost(row.inputTokens, row.outputTokens, row.reasoningTokens, row.cacheReadTokens, row.modelBreakdown, pricing);
 
             return (
               <>
@@ -490,6 +498,7 @@ function SessionTable({ data, pricing }: { data: SessionRow[]; pricing?: Pricing
                   <TableCell className="text-right">{fmt(row.inputTokens)}</TableCell>
                   <TableCell className="text-right">{fmt(row.cacheReadTokens)}</TableCell>
                   <TableCell className="text-right">{fmt(row.outputTokens)}</TableCell>
+                  <TableCell className="text-right">{fmt(row.reasoningTokens)}</TableCell>
                   <TableCell className="text-right">{fmtCost(cost)}</TableCell>
                   <TableCell className="text-muted-foreground">
                     {row.lastActivity
@@ -522,6 +531,7 @@ function BlockTable({ data, pricing }: { data: BlockRow[]; pricing?: PricingMap 
           <TableHead className="text-right">{t('table.input')}</TableHead>
           <TableHead className="text-right">{t('table.cacheHit')}</TableHead>
           <TableHead className="text-right">{t('table.output')}</TableHead>
+          <TableHead className="text-right">{t('table.reasoning')}</TableHead>
           <TableHead className="text-right">{t('table.cost')}</TableHead>
           <TableHead className="max-w-[330px]">{t('table.models')}</TableHead>
         </TableRow>
@@ -529,13 +539,13 @@ function BlockTable({ data, pricing }: { data: BlockRow[]; pricing?: PricingMap 
       <TableBody>
         {data.length === 0 ? (
           <TableRow>
-            <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+            <TableCell colSpan={10} className="h-24 text-center text-muted-foreground">
               {t('table.noData')}
             </TableCell>
           </TableRow>
         ) : (
           data.map((row) => {
-            const cost = estimateRowCost(row.inputTokens, row.outputTokens, row.cacheReadTokens, null, pricing);
+            const cost = estimateRowCost(row.inputTokens, row.outputTokens, row.reasoningTokens, row.cacheReadTokens, null, pricing);
             return (
               <TableRow key={row.blockId} className={row.isActive ? 'bg-primary/5' : ''}>
                 <TableCell>
@@ -559,6 +569,7 @@ function BlockTable({ data, pricing }: { data: BlockRow[]; pricing?: PricingMap 
                 <TableCell className="text-right">{fmt(row.inputTokens)}</TableCell>
                 <TableCell className="text-right">{fmt(row.cacheReadTokens)}</TableCell>
                 <TableCell className="text-right">{fmt(row.outputTokens)}</TableCell>
+                <TableCell className="text-right">{fmt(row.reasoningTokens)}</TableCell>
                 <TableCell className="text-right">{fmtCost(cost)}</TableCell>
                 <TableCell className="text-muted-foreground max-w-[330px]">
                   <span className="block truncate" title={row.modelsUsed?.join(', ')}>

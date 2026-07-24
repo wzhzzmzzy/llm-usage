@@ -49,7 +49,7 @@ impl UsageAdapter for CodexAdapter {
     }
 
     fn load_entries(&self, paths: &[PathBuf]) -> Result<Vec<UsageEntry>, Box<dyn std::error::Error>> {
-        let mut entries = Vec::new();
+        use rayon::prelude::*;
 
         let mut all_files = Vec::new();
         for base_path in paths {
@@ -76,12 +76,14 @@ impl UsageAdapter for CodexAdapter {
                 });
         }
 
-        for file in all_files {
-            let fork_seq = forks.get(&file).and_then(|u| parent_seqs.get(u));
-            if let Ok(file_entries) = parse_codex_jsonl(&file, &attribution, fork_seq.map(|v| &**v)) {
-                entries.extend(file_entries);
-            }
-        }
+        let entries = all_files
+            .par_iter()
+            .map(|file| {
+                let fork_seq = forks.get(file).and_then(|u| parent_seqs.get(u));
+                parse_codex_jsonl(file, &attribution, fork_seq.map(|v| &**v)).unwrap_or_default()
+            })
+            .flatten()
+            .collect();
 
         Ok(entries)
     }
@@ -103,6 +105,7 @@ impl UsageAdapter for CodexAdapter {
                 let input_tokens: u64 = day_entries.iter().map(|e| e.input_tokens).sum();
                 let cache_read_tokens: u64 = day_entries.iter().map(|e| e.cache_read_tokens).sum();
                 let output_tokens: u64 = day_entries.iter().map(|e| e.output_tokens).sum();
+                let reasoning_tokens: u64 = day_entries.iter().map(|e| e.reasoning_tokens).sum();
                 let request_count = day_entries.len() as u64;
 
                 let mut models_used: Vec<String> = day_entries
@@ -123,6 +126,7 @@ impl UsageAdapter for CodexAdapter {
                     input_tokens,
                     cache_read_tokens,
                     output_tokens,
+                    reasoning_tokens,
                     request_count,
                     models_used,
                     model_breakdown,
@@ -151,6 +155,7 @@ impl UsageAdapter for CodexAdapter {
                 let input_tokens: u64 = month_entries.iter().map(|e| e.input_tokens).sum();
                 let cache_read_tokens: u64 = month_entries.iter().map(|e| e.cache_read_tokens).sum();
                 let output_tokens: u64 = month_entries.iter().map(|e| e.output_tokens).sum();
+                let reasoning_tokens: u64 = month_entries.iter().map(|e| e.reasoning_tokens).sum();
                 let request_count = month_entries.len() as u64;
 
                 let mut models_used: Vec<String> = month_entries
@@ -171,6 +176,7 @@ impl UsageAdapter for CodexAdapter {
                     input_tokens,
                     cache_read_tokens,
                     output_tokens,
+                    reasoning_tokens,
                     request_count,
                     models_used,
                     model_breakdown,
@@ -201,6 +207,7 @@ impl UsageAdapter for CodexAdapter {
                 let input_tokens: u64 = session_entries.iter().map(|e| e.input_tokens).sum();
                 let cache_read_tokens: u64 = session_entries.iter().map(|e| e.cache_read_tokens).sum();
                 let output_tokens: u64 = session_entries.iter().map(|e| e.output_tokens).sum();
+                let reasoning_tokens: u64 = session_entries.iter().map(|e| e.reasoning_tokens).sum();
                 let request_count = session_entries.len() as u64;
 
                 let last_activity = session_entries
@@ -232,6 +239,7 @@ impl UsageAdapter for CodexAdapter {
                     input_tokens,
                     cache_read_tokens,
                     output_tokens,
+                    reasoning_tokens,
                     request_count,
                     last_activity,
                     models_used,
@@ -332,6 +340,9 @@ fn parse_codex_jsonl(
             fork_baseline = Some(own_seq[matched - 1]);
             let mut cum_seen = 0usize;
             for line in content.lines() {
+                if !line.contains("token_count") {
+                    continue;
+                }
                 let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
                     continue;
                 };
@@ -365,6 +376,11 @@ fn parse_codex_jsonl(
 
     for line in content.lines() {
         if line.trim().is_empty() {
+            continue;
+        }
+
+        // Only token_count and turn_context lines influence the result.
+        if !line.contains("token_count") && !line.contains("turn_context") {
             continue;
         }
 
@@ -508,6 +524,7 @@ fn parse_codex_jsonl(
                 model: Some(model),
                 input_tokens: input_tokens.saturating_sub(cached_input_tokens),
                 output_tokens,
+                reasoning_tokens: reasoning_output_tokens,
                 cache_creation_tokens: 0,
                 cache_read_tokens: cached_input_tokens,
                 total_tokens,
@@ -649,6 +666,7 @@ fn scan_session_metas(files: &[PathBuf]) -> SessionMetaScan {
 fn cum_snapshots(content: &str) -> Vec<CumSnapshot> {
     content
         .lines()
+        .filter(|line| line.contains("token_count"))
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
         .filter(|v| {
             v.get("type").and_then(|t| t.as_str()) == Some("event_msg")

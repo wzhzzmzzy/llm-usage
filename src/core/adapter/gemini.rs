@@ -86,6 +86,7 @@ impl UsageAdapter for GeminiAdapter {
                 let input_tokens: u64 = day_entries.iter().map(|e| e.input_tokens).sum();
                 let cache_read_tokens: u64 = day_entries.iter().map(|e| e.cache_read_tokens).sum();
                 let output_tokens: u64 = day_entries.iter().map(|e| e.output_tokens).sum();
+                let reasoning_tokens: u64 = day_entries.iter().map(|e| e.reasoning_tokens).sum();
                 let request_count = day_entries.len() as u64;
 
                 let mut models_used: Vec<String> = day_entries
@@ -106,6 +107,7 @@ impl UsageAdapter for GeminiAdapter {
                     input_tokens,
                     cache_read_tokens,
                     output_tokens,
+                    reasoning_tokens,
                     request_count,
                     models_used,
                     model_breakdown,
@@ -134,6 +136,7 @@ impl UsageAdapter for GeminiAdapter {
                 let input_tokens: u64 = month_entries.iter().map(|e| e.input_tokens).sum();
                 let cache_read_tokens: u64 = month_entries.iter().map(|e| e.cache_read_tokens).sum();
                 let output_tokens: u64 = month_entries.iter().map(|e| e.output_tokens).sum();
+                let reasoning_tokens: u64 = month_entries.iter().map(|e| e.reasoning_tokens).sum();
                 let request_count = month_entries.len() as u64;
 
                 let mut models_used: Vec<String> = month_entries
@@ -154,6 +157,7 @@ impl UsageAdapter for GeminiAdapter {
                     input_tokens,
                     cache_read_tokens,
                     output_tokens,
+                    reasoning_tokens,
                     request_count,
                     models_used,
                     model_breakdown,
@@ -184,6 +188,7 @@ impl UsageAdapter for GeminiAdapter {
                 let input_tokens: u64 = session_entries.iter().map(|e| e.input_tokens).sum();
                 let cache_read_tokens: u64 = session_entries.iter().map(|e| e.cache_read_tokens).sum();
                 let output_tokens: u64 = session_entries.iter().map(|e| e.output_tokens).sum();
+                let reasoning_tokens: u64 = session_entries.iter().map(|e| e.reasoning_tokens).sum();
                 let request_count = session_entries.len() as u64;
 
                 let last_activity = session_entries
@@ -215,6 +220,7 @@ impl UsageAdapter for GeminiAdapter {
                     input_tokens,
                     cache_read_tokens,
                     output_tokens,
+                    reasoning_tokens,
                     request_count,
                     last_activity,
                     models_used,
@@ -533,6 +539,7 @@ fn build_entry(
         model: Some(model.to_string()),
         input_tokens,
         output_tokens,
+        reasoning_tokens: tokens.thoughts,
         cache_creation_tokens: 0,
         cache_read_tokens,
         total_tokens,

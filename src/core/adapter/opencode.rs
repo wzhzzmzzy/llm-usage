@@ -76,6 +76,7 @@ impl UsageAdapter for OpenCodeAdapter {
                 let input_tokens: u64 = day_entries.iter().map(|e| e.input_tokens).sum();
                 let cache_read_tokens: u64 = day_entries.iter().map(|e| e.cache_read_tokens).sum();
                 let output_tokens: u64 = day_entries.iter().map(|e| e.output_tokens).sum();
+                let reasoning_tokens: u64 = day_entries.iter().map(|e| e.reasoning_tokens).sum();
                 let request_count = day_entries.len() as u64;
 
                 let mut models_used: Vec<String> = day_entries
@@ -96,6 +97,7 @@ impl UsageAdapter for OpenCodeAdapter {
                     input_tokens,
                     cache_read_tokens,
                     output_tokens,
+                    reasoning_tokens,
                     request_count,
                     models_used,
                     model_breakdown,
@@ -124,6 +126,7 @@ impl UsageAdapter for OpenCodeAdapter {
                 let input_tokens: u64 = month_entries.iter().map(|e| e.input_tokens).sum();
                 let cache_read_tokens: u64 = month_entries.iter().map(|e| e.cache_read_tokens).sum();
                 let output_tokens: u64 = month_entries.iter().map(|e| e.output_tokens).sum();
+                let reasoning_tokens: u64 = month_entries.iter().map(|e| e.reasoning_tokens).sum();
                 let request_count = month_entries.len() as u64;
 
                 let mut models_used: Vec<String> = month_entries
@@ -144,6 +147,7 @@ impl UsageAdapter for OpenCodeAdapter {
                     input_tokens,
                     cache_read_tokens,
                     output_tokens,
+                    reasoning_tokens,
                     request_count,
                     models_used,
                     model_breakdown,
@@ -174,6 +178,7 @@ impl UsageAdapter for OpenCodeAdapter {
                 let input_tokens: u64 = session_entries.iter().map(|e| e.input_tokens).sum();
                 let cache_read_tokens: u64 = session_entries.iter().map(|e| e.cache_read_tokens).sum();
                 let output_tokens: u64 = session_entries.iter().map(|e| e.output_tokens).sum();
+                let reasoning_tokens: u64 = session_entries.iter().map(|e| e.reasoning_tokens).sum();
                 let request_count = session_entries.len() as u64;
 
                 let last_activity = session_entries
@@ -205,6 +210,7 @@ impl UsageAdapter for OpenCodeAdapter {
                     input_tokens,
                     cache_read_tokens,
                     output_tokens,
+                    reasoning_tokens,
                     request_count,
                     last_activity,
                     models_used,
@@ -273,6 +279,7 @@ fn parse_message_json(json_str: &str, session_id: &str, session_dirs: &std::coll
 
     let input_tokens = tokens.get("input").and_then(|t| t.as_u64()).unwrap_or(0);
     let output_tokens = tokens.get("output").and_then(|t| t.as_u64()).unwrap_or(0);
+    let reasoning_tokens = tokens.get("reasoning").and_then(|t| t.as_u64()).unwrap_or(0);
     let cache = tokens.get("cache");
     let cache_creation_tokens = cache
         .and_then(|c| c.get("write"))
@@ -286,7 +293,7 @@ fn parse_message_json(json_str: &str, session_id: &str, session_dirs: &std::coll
     let total_tokens = tokens
         .get("total")
         .and_then(|t| t.as_u64())
-        .unwrap_or(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens);
+        .unwrap_or(input_tokens + output_tokens + reasoning_tokens + cache_creation_tokens + cache_read_tokens);
 
     if total_tokens == 0 {
         return None;
@@ -318,6 +325,7 @@ fn parse_message_json(json_str: &str, session_id: &str, session_dirs: &std::coll
         model,
         input_tokens,
         output_tokens,
+        reasoning_tokens,
         cache_creation_tokens,
         cache_read_tokens,
         total_tokens,
@@ -339,6 +347,7 @@ mod tests {
             "tokens": {
                 "input": 65680,
                 "output": 4091,
+                "reasoning": 500,
                 "cache": {"read": 1000, "write": 0}
             }
         }"#;
@@ -346,10 +355,26 @@ mod tests {
         let entry = parse_message_json(json, "test-session", &std::collections::HashMap::new()).unwrap();
         assert_eq!(entry.input_tokens, 65680);
         assert_eq!(entry.output_tokens, 4091);
+        assert_eq!(entry.reasoning_tokens, 500);
         assert_eq!(entry.cache_read_tokens, 1000);
         assert_eq!(entry.cache_creation_tokens, 0);
-        assert_eq!(entry.total_tokens, 65680 + 4091 + 1000);
+        assert_eq!(entry.total_tokens, 65680 + 4091 + 500 + 1000);
         assert_eq!(entry.model.unwrap(), "antigravity-gemini-3-pro-high");
+    }
+
+    #[test]
+    fn test_parse_message_json_reasoning_defaults_to_zero() {
+        let json = r#"{
+            "role": "assistant",
+            "time": {"created": 1768902371377},
+            "modelID": "gpt-5.5",
+            "sessionID": "test-session",
+            "tokens": {"input": 100, "output": 50}
+        }"#;
+
+        let entry = parse_message_json(json, "test-session", &std::collections::HashMap::new()).unwrap();
+        assert_eq!(entry.reasoning_tokens, 0);
+        assert_eq!(entry.total_tokens, 150);
     }
 
     #[test]
@@ -418,6 +443,7 @@ mod tests {
                 model: Some("gpt-5.5".to_string()),
                 input_tokens: 100,
                 output_tokens: 50,
+                reasoning_tokens: 0,
                 cache_creation_tokens: 0,
                 cache_read_tokens: 30,
                 total_tokens: 180,
@@ -429,6 +455,7 @@ mod tests {
                 model: Some("gpt-5.5".to_string()),
                 input_tokens: 200,
                 output_tokens: 80,
+                reasoning_tokens: 0,
                 cache_creation_tokens: 0,
                 cache_read_tokens: 60,
                 total_tokens: 340,
@@ -440,6 +467,7 @@ mod tests {
                 model: Some("claude-sonnet-4".to_string()),
                 input_tokens: 150,
                 output_tokens: 70,
+                reasoning_tokens: 0,
                 cache_creation_tokens: 0,
                 cache_read_tokens: 40,
                 total_tokens: 260,
@@ -482,6 +510,7 @@ mod tests {
                 model: Some("gpt-5.5".to_string()),
                 input_tokens: 100,
                 output_tokens: 50,
+                reasoning_tokens: 0,
                 cache_creation_tokens: 0,
                 cache_read_tokens: 30,
                 total_tokens: 180,
@@ -493,6 +522,7 @@ mod tests {
                 model: Some("claude-sonnet-4".to_string()),
                 input_tokens: 200,
                 output_tokens: 80,
+                reasoning_tokens: 0,
                 cache_creation_tokens: 0,
                 cache_read_tokens: 60,
                 total_tokens: 340,
@@ -516,6 +546,7 @@ mod tests {
                 model: Some("gpt-5.5".to_string()),
                 input_tokens: 100,
                 output_tokens: 50,
+                reasoning_tokens: 0,
                 cache_creation_tokens: 0,
                 cache_read_tokens: 30,
                 total_tokens: 180,
@@ -527,6 +558,7 @@ mod tests {
                 model: Some("gpt-5.5".to_string()),
                 input_tokens: 200,
                 output_tokens: 80,
+                reasoning_tokens: 0,
                 cache_creation_tokens: 0,
                 cache_read_tokens: 60,
                 total_tokens: 340,
