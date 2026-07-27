@@ -1,18 +1,18 @@
-use llm_usage::core::adapter::*;
 use llm_usage::core::adapter::claude::ClaudeAdapter;
 use llm_usage::core::adapter::codex::CodexAdapter;
 use llm_usage::core::adapter::gemini::GeminiAdapter;
 use llm_usage::core::adapter::opencode::OpenCodeAdapter;
+use llm_usage::core::adapter::*;
 use llm_usage::core::model::*;
 use llm_usage::core::normalize::*;
-use serde::Serialize;
 use serde::Deserialize;
+use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::{
-    CustomMenuItem, Manager, SystemTray, SystemTrayEvent, SystemTrayMenu,
-    SystemTrayMenuItem,
+    CustomMenuItem, Manager, SystemTray, SystemTrayEvent, SystemTrayMenu, SystemTrayMenuItem,
+    SystemTraySubmenu,
 };
 
 #[derive(Serialize, Deserialize, Default, Clone)]
@@ -45,6 +45,41 @@ fn save_config(config: &AppConfig) {
 
 struct AppState {
     entries: Mutex<Option<CachedEntries>>,
+    today_label: Mutex<String>,
+}
+
+const TODAY_ITEM_ID: &str = "today-total";
+
+// Deliberately different from the web dashboard's `formatTokens`: scale from
+// 1K upward and always keep exactly 2 decimals once scaled.
+fn format_tokens_compact(n: u64) -> String {
+    const K: u64 = 1_000;
+    const M: u64 = 1_000_000;
+    const B: u64 = 1_000_000_000;
+    if n >= B {
+        format!("{:.2}B", n as f64 / B as f64)
+    } else if n >= M {
+        format!("{:.2}M", n as f64 / M as f64)
+    } else if n >= K {
+        format!("{:.2}K", n as f64 / K as f64)
+    } else {
+        n.to_string()
+    }
+}
+
+// Uses the dashboard's notion of "today": entry timestamps carry an ISO date
+// prefix, which the web app compares against the local date.
+fn today_total_tokens(entries: &[UsageEntry]) -> u64 {
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    entries
+        .iter()
+        .filter(|e| e.timestamp.starts_with(&today))
+        .map(|e| e.total_tokens)
+        .sum()
+}
+
+fn today_item_title(label: &str) -> String {
+    format!("Today: {}", label)
 }
 
 struct CachedEntries {
@@ -126,71 +161,29 @@ fn build_snapshot(cached: &CachedEntries) -> Snapshot {
         let session_agg = adapter.aggregate_session(entries);
         let blocks_agg = adapter.aggregate_blocks(entries, 5);
 
-        let daily_raw: Vec<RawDailyAggregate> = daily_agg.iter().map(|a| RawDailyAggregate {
-            date: a.date.clone(),
-            total_tokens: a.total_tokens,
-            input_tokens: a.input_tokens,
-            cache_read_tokens: a.cache_read_tokens,
-            output_tokens: a.output_tokens,
-            reasoning_tokens: a.reasoning_tokens,
-            request_count: Some(a.request_count),
-            models_used: Some(a.models_used.clone()),
-            model_breakdown: Some(a.model_breakdown.clone()),
-        }).collect();
-
-        let monthly_raw: Vec<RawMonthlyAggregate> = monthly_agg.iter().map(|a| RawMonthlyAggregate {
-            month: a.month.clone(),
-            total_tokens: a.total_tokens,
-            input_tokens: a.input_tokens,
-            cache_read_tokens: a.cache_read_tokens,
-            output_tokens: a.output_tokens,
-            reasoning_tokens: a.reasoning_tokens,
-            request_count: Some(a.request_count),
-            models_used: Some(a.models_used.clone()),
-            model_breakdown: Some(a.model_breakdown.clone()),
-        }).collect();
-
-        let session_raw: Vec<RawSessionAggregate> = session_agg.iter().map(|a| RawSessionAggregate {
-            session_id: a.session_id.clone(),
-            project_path: a.project_path.clone(),
-            total_tokens: a.total_tokens,
-            input_tokens: a.input_tokens,
-            cache_read_tokens: a.cache_read_tokens,
-            output_tokens: a.output_tokens,
-            reasoning_tokens: a.reasoning_tokens,
-            request_count: Some(a.request_count),
-            last_activity: a.last_activity.clone(),
-            models_used: Some(a.models_used.clone()),
-            model_breakdown: Some(a.model_breakdown.clone()),
-        }).collect();
-
-        let blocks_raw: Vec<RawBlockAggregate> = blocks_agg.iter().map(|a| RawBlockAggregate {
-            block_id: a.block_id.clone(),
-            start_time: a.start_time.clone(),
-            end_time: a.end_time.clone(),
-            actual_end_time: a.actual_end_time.clone(),
-            is_active: a.is_active,
-            total_tokens: a.total_tokens,
-            input_tokens: a.input_tokens,
-            cache_read_tokens: a.cache_read_tokens,
-            output_tokens: a.output_tokens,
-            reasoning_tokens: a.reasoning_tokens,
-            request_count: Some(a.request_count),
-            models_used: Some(a.models_used.clone()),
-            model_breakdown: Some(a.model_breakdown.clone()),
-        }).collect();
-
-        if let Ok(report) = Normalizer::normalize_daily(&daily_raw) {
-            daily.insert(format!("{}_daily", source_str), serde_json::to_value(report).unwrap());
+        if let Ok(report) = Normalizer::normalize_daily(&daily_agg) {
+            daily.insert(
+                format!("{}_daily", source_str),
+                serde_json::to_value(report).unwrap(),
+            );
         }
-        if let Ok(report) = Normalizer::normalize_monthly(&monthly_raw) {
-            monthly.insert(format!("{}_monthly", source_str), serde_json::to_value(report).unwrap());
+        if let Ok(report) = Normalizer::normalize_monthly(&monthly_agg) {
+            monthly.insert(
+                format!("{}_monthly", source_str),
+                serde_json::to_value(report).unwrap(),
+            );
         }
-        if let Ok(report) = Normalizer::normalize_session(&session_raw) {
-            session.insert(format!("{}_session", source_str), serde_json::to_value(report).unwrap());
+        if let Ok(report) = Normalizer::normalize_session(&session_agg) {
+            session.insert(
+                format!("{}_session", source_str),
+                serde_json::to_value(report).unwrap(),
+            );
         }
-        if let Ok(report) = Normalizer::normalize_blocks(&blocks_raw) {
-            blocks.insert(format!("{}_blocks", source_str), serde_json::to_value(report).unwrap());
+        if let Ok(report) = Normalizer::normalize_blocks(&blocks_agg) {
+            blocks.insert(
+                format!("{}_blocks", source_str),
+                serde_json::to_value(report).unwrap(),
+            );
         }
 
         for report in ReportType::all_variants() {
@@ -212,70 +205,16 @@ fn build_snapshot(cached: &CachedEntries) -> Snapshot {
     let all_session = all_adapter.aggregate_session(&cached.all_entries);
     let all_blocks = all_adapter.aggregate_blocks(&cached.all_entries, 5);
 
-    let all_daily_raw: Vec<RawDailyAggregate> = all_daily.iter().map(|a| RawDailyAggregate {
-        date: a.date.clone(),
-        total_tokens: a.total_tokens,
-        input_tokens: a.input_tokens,
-        cache_read_tokens: a.cache_read_tokens,
-        output_tokens: a.output_tokens,
-        reasoning_tokens: a.reasoning_tokens,
-        request_count: Some(a.request_count),
-        models_used: Some(a.models_used.clone()),
-        model_breakdown: Some(a.model_breakdown.clone()),
-    }).collect();
-
-    let all_monthly_raw: Vec<RawMonthlyAggregate> = all_monthly.iter().map(|a| RawMonthlyAggregate {
-        month: a.month.clone(),
-        total_tokens: a.total_tokens,
-        input_tokens: a.input_tokens,
-        cache_read_tokens: a.cache_read_tokens,
-        output_tokens: a.output_tokens,
-        reasoning_tokens: a.reasoning_tokens,
-        request_count: Some(a.request_count),
-        models_used: Some(a.models_used.clone()),
-        model_breakdown: Some(a.model_breakdown.clone()),
-    }).collect();
-
-    let all_session_raw: Vec<RawSessionAggregate> = all_session.iter().map(|a| RawSessionAggregate {
-        session_id: a.session_id.clone(),
-        project_path: a.project_path.clone(),
-        total_tokens: a.total_tokens,
-        input_tokens: a.input_tokens,
-        cache_read_tokens: a.cache_read_tokens,
-        output_tokens: a.output_tokens,
-        reasoning_tokens: a.reasoning_tokens,
-        request_count: Some(a.request_count),
-        last_activity: a.last_activity.clone(),
-        models_used: Some(a.models_used.clone()),
-        model_breakdown: Some(a.model_breakdown.clone()),
-    }).collect();
-
-    let all_blocks_raw: Vec<RawBlockAggregate> = all_blocks.iter().map(|a| RawBlockAggregate {
-        block_id: a.block_id.clone(),
-        start_time: a.start_time.clone(),
-        end_time: a.end_time.clone(),
-        actual_end_time: a.actual_end_time.clone(),
-        is_active: a.is_active,
-        total_tokens: a.total_tokens,
-        input_tokens: a.input_tokens,
-        cache_read_tokens: a.cache_read_tokens,
-        output_tokens: a.output_tokens,
-        reasoning_tokens: a.reasoning_tokens,
-        request_count: Some(a.request_count),
-        models_used: Some(a.models_used.clone()),
-        model_breakdown: Some(a.model_breakdown.clone()),
-    }).collect();
-
-    if let Ok(report) = Normalizer::normalize_daily(&all_daily_raw) {
+    if let Ok(report) = Normalizer::normalize_daily(&all_daily) {
         daily.insert("all_daily".into(), serde_json::to_value(report).unwrap());
     }
-    if let Ok(report) = Normalizer::normalize_monthly(&all_monthly_raw) {
+    if let Ok(report) = Normalizer::normalize_monthly(&all_monthly) {
         monthly.insert("all_monthly".into(), serde_json::to_value(report).unwrap());
     }
-    if let Ok(report) = Normalizer::normalize_session(&all_session_raw) {
+    if let Ok(report) = Normalizer::normalize_session(&all_session) {
         session.insert("all_session".into(), serde_json::to_value(report).unwrap());
     }
-    if let Ok(report) = Normalizer::normalize_blocks(&all_blocks_raw) {
+    if let Ok(report) = Normalizer::normalize_blocks(&all_blocks) {
         blocks.insert("all_blocks".into(), serde_json::to_value(report).unwrap());
     }
 
@@ -324,14 +263,15 @@ fn get_snapshot(state: tauri::State<'_, AppState>) -> Snapshot {
     }
 }
 
-#[tauri::command]
-async fn refresh(state: tauri::State<'_, AppState>) -> Result<RefreshStatus, String> {
+async fn perform_refresh(app: &tauri::AppHandle) -> Result<RefreshStatus, String> {
     let entries = tauri::async_runtime::spawn_blocking(load_all_entries)
         .await
         .map_err(|e| e.to_string())?;
 
     let timestamp = chrono::Utc::now();
     let all_entries: Vec<UsageEntry> = entries.iter().flat_map(|(_, e)| e.clone()).collect();
+
+    let today_label = format_tokens_compact(today_total_tokens(&all_entries));
 
     let cached = CachedEntries {
         timestamp,
@@ -342,6 +282,16 @@ async fn refresh(state: tauri::State<'_, AppState>) -> Result<RefreshStatus, Str
     let snapshot = build_snapshot(&cached);
     let status = snapshot.status.clone();
 
+    let state = app.state::<AppState>();
+    *state.today_label.lock().unwrap() = today_label.clone();
+    if let Err(e) = app
+        .tray_handle()
+        .get_item(TODAY_ITEM_ID)
+        .set_title(&today_item_title(&today_label))
+    {
+        eprintln!("[tray] Failed to update today tokens: {}", e);
+    }
+
     *state.entries.lock().unwrap() = Some(cached);
 
     Ok(RefreshStatus {
@@ -351,6 +301,11 @@ async fn refresh(state: tauri::State<'_, AppState>) -> Result<RefreshStatus, Str
         last_error: None,
         snapshot_status: status,
     })
+}
+
+#[tauri::command]
+async fn refresh(app: tauri::AppHandle) -> Result<RefreshStatus, String> {
+    perform_refresh(&app).await
 }
 
 #[tauri::command]
@@ -386,8 +341,8 @@ const LANG_OPTIONS: &[(&str, &str)] = &[
     ("en", "English"),
 ];
 
-fn build_tray_menu(current_lang: &str) -> SystemTrayMenu {
-    let mut menu = SystemTrayMenu::new();
+fn build_tray_menu(current_lang: &str, today_label: &str) -> SystemTrayMenu {
+    let mut lang_menu = SystemTrayMenu::new();
     for (id, label) in LANG_OPTIONS {
         // 当前语言前加 ✓，其他前加空格对齐
         let display = if *id == current_lang {
@@ -395,12 +350,16 @@ fn build_tray_menu(current_lang: &str) -> SystemTrayMenu {
         } else {
             format!("  {}", label)
         };
-        menu = menu.add_item(CustomMenuItem::new(id.to_string(), display));
+        lang_menu = lang_menu.add_item(CustomMenuItem::new(id.to_string(), display));
     }
-    menu = menu
+
+    SystemTrayMenu::new()
+        .add_item(CustomMenuItem::new(TODAY_ITEM_ID, today_item_title(today_label)).disabled())
+        .add_item(CustomMenuItem::new("refresh", "刷新 / Refresh"))
         .add_native_item(SystemTrayMenuItem::Separator)
-        .add_item(CustomMenuItem::new("quit", "退出 / Quit"));
-    menu
+        .add_submenu(SystemTraySubmenu::new("语言 / Language", lang_menu))
+        .add_native_item(SystemTrayMenuItem::Separator)
+        .add_item(CustomMenuItem::new("quit", "退出 / Quit"))
 }
 
 #[tauri::command]
@@ -417,7 +376,7 @@ fn health() -> serde_json::Value {
 pub fn run() {
     let config = load_config();
     let initial_lang = config.language.clone();
-    let tray_menu = build_tray_menu(&config.language);
+    let tray_menu = build_tray_menu(&config.language, "-");
 
     tauri::Builder::default()
         .system_tray(SystemTray::new().with_menu(tray_menu))
@@ -431,17 +390,13 @@ pub fn run() {
                 String::new()
             };
 
-            tauri::WindowBuilder::new(
-                app,
-                "main",
-                tauri::WindowUrl::App("index.html".into()),
-            )
-            .title("LLM Usage Dashboard")
-            .inner_size(1055.0, 800.0)
-            .max_inner_size(1055.0, f64::MAX)
-            .resizable(true)
-            .initialization_script(&init_script)
-            .build()?;
+            tauri::WindowBuilder::new(app, "main", tauri::WindowUrl::App("index.html".into()))
+                .title("Tokender")
+                .inner_size(1055.0, 800.0)
+                .max_inner_size(1055.0, f64::MAX)
+                .resizable(true)
+                .initialization_script(&init_script)
+                .build()?;
 
             Ok(())
         })
@@ -455,7 +410,13 @@ pub fn run() {
                         save_config(&cfg);
 
                         // 2. 更新托盘菜单勾选项
-                        let new_menu = build_tray_menu(lang);
+                        let today_label = app
+                            .state::<AppState>()
+                            .today_label
+                            .lock()
+                            .unwrap()
+                            .clone();
+                        let new_menu = build_tray_menu(lang, &today_label);
                         if let Err(e) = app.tray_handle().set_menu(new_menu) {
                             eprintln!("[i18n] Failed to update tray menu: {}", e);
                         }
@@ -465,6 +426,19 @@ pub fn run() {
                             eprintln!("[i18n] Failed to emit language-changed: {}", e);
                         }
                     }
+                    "refresh" => {
+                        let app = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            match perform_refresh(&app).await {
+                                Ok(_) => {
+                                    if let Err(e) = app.emit_all("snapshot-updated", ()) {
+                                        eprintln!("[tray] Failed to emit snapshot-updated: {}", e);
+                                    }
+                                }
+                                Err(e) => eprintln!("[tray] Refresh failed: {}", e),
+                            }
+                        });
+                    }
                     "quit" => std::process::exit(0),
                     _ => {}
                 }
@@ -472,6 +446,7 @@ pub fn run() {
         })
         .manage(AppState {
             entries: Mutex::new(None),
+            today_label: Mutex::new("-".into()),
         })
         .invoke_handler(tauri::generate_handler![
             health,
@@ -496,7 +471,9 @@ mod tests {
 
     #[test]
     fn test_appconfig_serialization_roundtrip() {
-        let config = AppConfig { language: "zh-CN".to_string() };
+        let config = AppConfig {
+            language: "zh-CN".to_string(),
+        };
         let json = serde_json::to_string(&config).unwrap();
         let parsed: AppConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.language, "zh-CN");
@@ -512,7 +489,53 @@ mod tests {
     #[test]
     fn test_appconfig_deserialize_unknown_fields_ignored() {
         // 未来加入新字段时旧版本能容错
-        let config: AppConfig = serde_json::from_str(r#"{"language":"ja","theme":"dark"}"#).unwrap();
+        let config: AppConfig =
+            serde_json::from_str(r#"{"language":"ja","theme":"dark"}"#).unwrap();
         assert_eq!(config.language, "ja");
+    }
+
+    #[test]
+    fn test_format_tokens_compact() {
+        assert_eq!(format_tokens_compact(0), "0");
+        assert_eq!(format_tokens_compact(999), "999");
+        assert_eq!(format_tokens_compact(1_000), "1.00K");
+        assert_eq!(format_tokens_compact(1_500), "1.50K");
+        assert_eq!(format_tokens_compact(999_999), "1000.00K");
+        assert_eq!(format_tokens_compact(1_000_000), "1.00M");
+        assert_eq!(format_tokens_compact(2_345_678), "2.35M");
+        assert_eq!(format_tokens_compact(1_000_000_000), "1.00B");
+        assert_eq!(format_tokens_compact(3_456_789_012), "3.46B");
+    }
+
+    fn usage_entry_at(timestamp: &str, total_tokens: u64) -> UsageEntry {
+        UsageEntry {
+            session_id: String::new(),
+            timestamp: timestamp.to_string(),
+            model: None,
+            input_tokens: 0,
+            output_tokens: 0,
+            reasoning_tokens: 0,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 0,
+            total_tokens,
+            project_path: None,
+        }
+    }
+
+    #[test]
+    fn test_today_total_tokens_sums_today_only() {
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let entries = vec![
+            usage_entry_at(&format!("{}T01:00:00Z", today), 100),
+            usage_entry_at(&format!("{}T23:59:59Z", today), 200),
+            usage_entry_at("2000-01-01T00:00:00Z", 500),
+            usage_entry_at("", 700),
+        ];
+        assert_eq!(today_total_tokens(&entries), 300);
+    }
+
+    #[test]
+    fn test_today_total_tokens_empty() {
+        assert_eq!(today_total_tokens(&[]), 0);
     }
 }

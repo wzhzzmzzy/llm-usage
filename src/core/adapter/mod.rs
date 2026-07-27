@@ -132,7 +132,7 @@ pub struct BlockAggregate {
 pub const DEFAULT_BLOCK_DURATION_HOURS: i64 = 5;
 
 /// Helper to build model breakdown from entries
-pub fn build_model_breakdown(entries: &[UsageEntry]) -> Vec<ModelBreakdown> {
+pub fn build_model_breakdown(entries: &[&UsageEntry]) -> Vec<ModelBreakdown> {
     use std::collections::HashMap;
 
     let mut map: HashMap<String, ModelBreakdown> = HashMap::new();
@@ -261,9 +261,7 @@ fn create_block(
         .collect();
     models_used.sort();
 
-    let model_breakdown = build_model_breakdown(
-        &entries.iter().map(|e| (*e).clone()).collect::<Vec<_>>(),
-    );
+    let model_breakdown = build_model_breakdown(entries);
 
     BlockAggregate {
         block_id: start_time.to_rfc3339(),

@@ -1,20 +1,31 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 
-use crate::core::adapter::{claude::ClaudeAdapter, codex::CodexAdapter, gemini::GeminiAdapter, opencode::OpenCodeAdapter, UsageAdapter, UsageEntry};
+use crate::core::adapter::{claude::ClaudeAdapter, codex::CodexAdapter, gemini::GeminiAdapter, opencode::OpenCodeAdapter, BlockAggregate, DailyAggregate, MonthlyAggregate, SessionAggregate, UsageAdapter, UsageEntry};
 use crate::core::model::*;
 
 /// Cached entries for a single source (claude/codex/opencode)
 struct SourceCache {
-    entries: Vec<UsageEntry>,
+    entries: Arc<Vec<UsageEntry>>,
+}
+
+/// Typed per-cell aggregation result, handed to the refresh pipeline as-is
+/// (avoids a JSON serialize/parse round trip between provider and normalizer).
+pub enum CellAggregates {
+    Daily(Vec<DailyAggregate>),
+    Monthly(Vec<MonthlyAggregate>),
+    Session(Vec<SessionAggregate>),
+    Blocks(Vec<BlockAggregate>),
 }
 
 /// Native usage provider with per-source entry caching
 pub struct NativeUsageProvider {
     adapters: Vec<Box<dyn UsageAdapter>>,
     source_cache: RwLock<HashMap<Source, SourceCache>>,
+    all_entries: RwLock<Arc<Vec<UsageEntry>>>,
     block_duration_hours: i64,
 }
 
@@ -32,6 +43,7 @@ impl NativeUsageProvider {
                 Box::new(OpenCodeAdapter::new()),
             ],
             source_cache: RwLock::new(HashMap::new()),
+            all_entries: RwLock::new(Arc::new(Vec::new())),
             block_duration_hours,
         }
     }
@@ -60,13 +72,18 @@ impl NativeUsageProvider {
         }
 
         let mut cache = self.source_cache.write().await;
+        let mut all = Vec::new();
         for handle in handles {
             if let Ok((source, entries, elapsed)) = handle.await {
                 tracing::info!("{:?} adapter: {} entries loaded, {:?}", source, entries.len(), elapsed);
-                cache.insert(source, SourceCache { entries });
+                all.extend(entries.iter().cloned());
+                cache.insert(source, SourceCache { entries: Arc::new(entries) });
             }
         }
+        drop(cache);
+        *self.all_entries.write().await = Arc::new(all);
 
+        let cache = self.source_cache.read().await;
         tracing::info!("total preload: {:?}, {} total entries", start.elapsed(),
             cache.values().map(|c| c.entries.len()).sum::<usize>());
     }
@@ -83,45 +100,28 @@ impl NativeUsageProvider {
         }
     }
 
-    pub async fn execute_cell(&self, cell: Cell) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let entries = if cell.source == Source::All {
-            let cache = self.source_cache.read().await;
-            let mut all = Vec::new();
-            for cached in cache.values() {
-                all.extend(cached.entries.clone());
-            }
-            all
+    pub async fn execute_cell(&self, cell: Cell) -> Result<CellAggregates, Box<dyn std::error::Error + Send + Sync>> {
+        let entries: Arc<Vec<UsageEntry>> = if cell.source == Source::All {
+            self.all_entries.read().await.clone()
         } else {
             let cache = self.source_cache.read().await;
             match cache.get(&cell.source) {
                 Some(cached) => cached.entries.clone(),
-                None => Vec::new(),
+                None => Arc::new(Vec::new()),
             }
         };
 
         let any_adapter = self.adapters.first()
             .ok_or("No adapters available")?;
 
-        let json = match cell.report {
-            ReportType::Daily => {
-                let aggregates = any_adapter.aggregate_daily(&entries);
-                serde_json::to_string(&aggregates)?
-            }
-            ReportType::Monthly => {
-                let aggregates = any_adapter.aggregate_monthly(&entries);
-                serde_json::to_string(&aggregates)?
-            }
-            ReportType::Session => {
-                let aggregates = any_adapter.aggregate_session(&entries);
-                serde_json::to_string(&aggregates)?
-            }
-            ReportType::Blocks => {
-                let aggregates = any_adapter.aggregate_blocks(&entries, self.block_duration_hours);
-                serde_json::to_string(&aggregates)?
-            }
+        let aggregates = match cell.report {
+            ReportType::Daily => CellAggregates::Daily(any_adapter.aggregate_daily(&entries)),
+            ReportType::Monthly => CellAggregates::Monthly(any_adapter.aggregate_monthly(&entries)),
+            ReportType::Session => CellAggregates::Session(any_adapter.aggregate_session(&entries)),
+            ReportType::Blocks => CellAggregates::Blocks(any_adapter.aggregate_blocks(&entries, self.block_duration_hours)),
         };
 
-        Ok(json)
+        Ok(aggregates)
     }
 
     pub async fn health_check(&self) -> ProviderHealth {
@@ -137,13 +137,13 @@ impl NativeUsageProvider {
 
 #[async_trait]
 pub trait UsageProvider: Send + Sync {
-    async fn execute_cell(&self, cell: Cell) -> Result<String, Box<dyn std::error::Error + Send + Sync>>;
+    async fn execute_cell(&self, cell: Cell) -> Result<CellAggregates, Box<dyn std::error::Error + Send + Sync>>;
     async fn health_check(&self) -> ProviderHealth;
 }
 
 #[async_trait]
 impl UsageProvider for NativeUsageProvider {
-    async fn execute_cell(&self, cell: Cell) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    async fn execute_cell(&self, cell: Cell) -> Result<CellAggregates, Box<dyn std::error::Error + Send + Sync>> {
         self.execute_cell(cell).await
     }
 
@@ -177,85 +177,76 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_execute_cell_daily_returns_json_array() {
+    async fn test_execute_cell_daily_returns_daily_aggregates() {
         let provider = NativeUsageProvider::new();
         provider.preload().await;
 
         let cell = Cell { source: Source::Claude, report: ReportType::Daily };
-        let json = provider.execute_cell(cell).await.unwrap();
-        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let result = provider.execute_cell(cell).await.unwrap();
 
-        assert!(value.is_array());
+        assert!(matches!(result, CellAggregates::Daily(_)));
     }
 
     #[tokio::test]
-    async fn test_execute_cell_monthly_returns_json_array() {
+    async fn test_execute_cell_monthly_returns_monthly_aggregates() {
         let provider = NativeUsageProvider::new();
         provider.preload().await;
 
         let cell = Cell { source: Source::Codex, report: ReportType::Monthly };
-        let json = provider.execute_cell(cell).await.unwrap();
-        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let result = provider.execute_cell(cell).await.unwrap();
 
-        assert!(value.is_array());
+        assert!(matches!(result, CellAggregates::Monthly(_)));
     }
 
     #[tokio::test]
-    async fn test_execute_cell_session_returns_json_array() {
+    async fn test_execute_cell_session_returns_session_aggregates() {
         let provider = NativeUsageProvider::new();
         provider.preload().await;
 
         let cell = Cell { source: Source::Opencode, report: ReportType::Session };
-        let json = provider.execute_cell(cell).await.unwrap();
-        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let result = provider.execute_cell(cell).await.unwrap();
 
-        assert!(value.is_array());
+        assert!(matches!(result, CellAggregates::Session(_)));
     }
 
     #[tokio::test]
-    async fn test_daily_json_has_expected_fields() {
+    async fn test_daily_aggregates_have_expected_fields() {
         let provider = NativeUsageProvider::new();
         provider.preload().await;
 
         let cell = Cell { source: Source::Claude, report: ReportType::Daily };
-        let json = provider.execute_cell(cell).await.unwrap();
-        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let result = provider.execute_cell(cell).await.unwrap();
 
-        // Should be an array
-        assert!(value.is_array());
+        let CellAggregates::Daily(rows) = result else {
+            panic!("expected daily aggregates");
+        };
 
-        // If there's data, check the first element has expected fields
-        if let Some(first) = value.as_array().and_then(|a| a.first()) {
-            assert!(first.get("date").is_some());
-            assert!(first.get("totalTokens").is_some());
-            assert!(first.get("inputTokens").is_some());
-            assert!(first.get("cacheReadTokens").is_some());
-            assert!(first.get("outputTokens").is_some());
-            assert!(first.get("requestCount").is_some());
-            assert!(first.get("modelsUsed").is_some());
-            assert!(first.get("modelBreakdown").is_some());
+        if let Some(first) = rows.first() {
+            assert!(!first.date.is_empty());
+            assert!(first.total_tokens > 0);
+            assert!(first.request_count > 0);
+            assert!(!first.models_used.is_empty());
+            assert!(!first.model_breakdown.is_empty());
         }
     }
 
     #[tokio::test]
-    async fn test_session_json_has_expected_fields() {
+    async fn test_session_aggregates_have_expected_fields() {
         let provider = NativeUsageProvider::new();
         provider.preload().await;
 
         let cell = Cell { source: Source::Opencode, report: ReportType::Session };
-        let json = provider.execute_cell(cell).await.unwrap();
-        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let result = provider.execute_cell(cell).await.unwrap();
 
-        assert!(value.is_array());
+        let CellAggregates::Session(rows) = result else {
+            panic!("expected session aggregates");
+        };
 
-        if let Some(first) = value.as_array().and_then(|a| a.first()) {
-            assert!(first.get("sessionId").is_some());
-            assert!(first.get("totalTokens").is_some());
-            assert!(first.get("inputTokens").is_some());
-            assert!(first.get("cacheReadTokens").is_some());
-            assert!(first.get("outputTokens").is_some());
-            assert!(first.get("requestCount").is_some());
-            assert!(first.get("modelBreakdown").is_some());
+        if let Some(first) = rows.first() {
+            assert!(!first.session_id.is_empty());
+            assert!(first.total_tokens > 0);
+            assert!(first.request_count > 0);
+            assert!(!first.model_breakdown.is_empty());
         }
     }
 }

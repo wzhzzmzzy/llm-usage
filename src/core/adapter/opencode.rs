@@ -87,9 +87,7 @@ impl UsageAdapter for OpenCodeAdapter {
                     .collect();
                 models_used.sort();
 
-                let model_breakdown = build_model_breakdown(
-                    &day_entries.iter().map(|e| (*e).clone()).collect::<Vec<_>>(),
-                );
+                let model_breakdown = build_model_breakdown(&day_entries);
 
                 DailyAggregate {
                     date,
@@ -137,9 +135,7 @@ impl UsageAdapter for OpenCodeAdapter {
                     .collect();
                 models_used.sort();
 
-                let model_breakdown = build_model_breakdown(
-                    &month_entries.iter().map(|e| (*e).clone()).collect::<Vec<_>>(),
-                );
+                let model_breakdown = build_model_breakdown(&month_entries);
 
                 MonthlyAggregate {
                     month,
@@ -195,9 +191,7 @@ impl UsageAdapter for OpenCodeAdapter {
                     .collect();
                 models_used.sort();
 
-                let model_breakdown = build_model_breakdown(
-                    &session_entries.iter().map(|e| (*e).clone()).collect::<Vec<_>>(),
-                );
+                let model_breakdown = build_model_breakdown(&session_entries);
 
                 let project_path = session_entries
                     .iter()

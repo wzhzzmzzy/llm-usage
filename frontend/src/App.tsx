@@ -322,6 +322,69 @@ function App() {
     };
   }, [loadSnapshot, handleRefresh]);
 
+  // Tauri only: refresh when the app comes back into view or reactivates.
+  useEffect(() => {
+    const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+    if (!isTauri) return;
+
+    let disposed = false;
+    let unlistenTauriFocus: (() => void) | undefined;
+    // Seeded so the focus event fired right after launch is skipped; the
+    // mount effect above already performs that first refresh.
+    let lastTrigger = Date.now();
+
+    const trigger = () => {
+      const now = Date.now();
+      if (now - lastTrigger < 2000) return;
+      lastTrigger = now;
+      handleRefresh();
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') trigger();
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('focus', trigger);
+
+    import('@tauri-apps/api/window')
+      .then(({ appWindow }) => appWindow.listen('tauri://focus', trigger))
+      .then((unlisten) => {
+        if (disposed) unlisten();
+        else unlistenTauriFocus = unlisten;
+      })
+      .catch(() => {});
+
+    return () => {
+      disposed = true;
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('focus', trigger);
+      unlistenTauriFocus?.();
+    };
+  }, [handleRefresh]);
+
+  // Tauri only: reload data after a backend-side refresh (tray menu item).
+  useEffect(() => {
+    const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+    if (!isTauri) return;
+
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    import('@tauri-apps/api/window')
+      .then(({ appWindow }) => appWindow.listen('snapshot-updated', () => loadSnapshot()))
+      .then((u) => {
+        if (disposed) u();
+        else unlisten = u;
+      })
+      .catch(() => {});
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [loadSnapshot]);
+
   const sourceKey = source === 'all' ? 'all' : source;
   const dailyData = snapshot?.daily?.[`${sourceKey}_daily`];
   const monthlyData = snapshot?.monthly?.[`${sourceKey}_monthly`];

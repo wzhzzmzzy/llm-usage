@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::config::AppConfig;
 use crate::core::error::RefreshError;
 use crate::core::model::*;
-use crate::core::normalize::{Normalizer, RawBlockAggregate, RawDailyAggregate, RawMonthlyAggregate, RawSessionAggregate};
+use crate::core::normalize::Normalizer;
 
 pub const MAX_CONCURRENT_COMMANDS: usize = 8;
 pub const COMMAND_TIMEOUT_SECS: u64 = 15;
@@ -30,7 +30,7 @@ pub struct RefreshManager {
     last_error: Arc<Mutex<Option<String>>>,
 }
 
-use crate::core::provider::NativeUsageProvider;
+use crate::core::provider::{CellAggregates, NativeUsageProvider};
 
 impl RefreshManager {
     pub fn new(config: AppConfig) -> Self {
@@ -101,7 +101,6 @@ impl RefreshManager {
 
     /// Synchronous refresh (used by CLI)
     pub async fn refresh(&self) -> Result<RefreshResponse, RefreshError> {
-        self.provider.preload().await;
         let result = Self::execute_refresh_inner(self.provider.clone(), self.snapshot.clone()).await?;
 
         let mut error_guard = self.last_error.lock().await;
@@ -145,7 +144,7 @@ impl RefreshManager {
                 .await;
 
                 match result {
-                    Ok(Ok(json)) => (cell, Ok(json)),
+                    Ok(Ok(data)) => (cell, Ok(data)),
                     Ok(Err(e)) => (cell, Err(e)),
                     Err(_) => (cell, Err(Box::new(std::io::Error::new(
                         std::io::ErrorKind::TimedOut,
@@ -172,7 +171,7 @@ impl RefreshManager {
 
         for result in results {
             match result {
-                Ok((cell, Ok(json))) => match Self::process_cell(&mut snapshot_guard, cell, &json) {
+                Ok((cell, Ok(data))) => match Self::process_cell(&mut snapshot_guard, cell, data) {
                     Ok(()) => success_count += 1,
                     Err(e) => {
                         Self::mark_cell_error(&mut snapshot_guard, cell, &e.to_string());
@@ -247,7 +246,7 @@ impl RefreshManager {
     fn process_cell(
         snapshot: &mut Snapshot,
         cell: Cell,
-        json: &str,
+        data: CellAggregates,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let key = Snapshot::cell_key(cell.source, cell.report);
 
@@ -261,26 +260,25 @@ impl RefreshManager {
         };
         snapshot.cells.insert(key.clone(), cell_result);
 
-        match cell.report {
-            ReportType::Daily => {
-                let rows: Vec<RawDailyAggregate> = serde_json::from_str(json)?;
+        match (cell.report, data) {
+            (ReportType::Daily, CellAggregates::Daily(rows)) => {
                 let report = Normalizer::normalize_daily(&rows)?;
                 snapshot.daily.insert(key, report);
             }
-            ReportType::Monthly => {
-                let rows: Vec<RawMonthlyAggregate> = serde_json::from_str(json)?;
+            (ReportType::Monthly, CellAggregates::Monthly(rows)) => {
                 let report = Normalizer::normalize_monthly(&rows)?;
                 snapshot.monthly.insert(key, report);
             }
-            ReportType::Session => {
-                let rows: Vec<RawSessionAggregate> = serde_json::from_str(json)?;
+            (ReportType::Session, CellAggregates::Session(rows)) => {
                 let report = Normalizer::normalize_session(&rows)?;
                 snapshot.session.insert(key, report);
             }
-            ReportType::Blocks => {
-                let rows: Vec<RawBlockAggregate> = serde_json::from_str(json)?;
+            (ReportType::Blocks, CellAggregates::Blocks(rows)) => {
                 let report = Normalizer::normalize_blocks(&rows)?;
                 snapshot.blocks.insert(key, report);
+            }
+            (report, _) => {
+                return Err(format!("cell {:?} returned mismatched aggregates", report).into());
             }
         }
 

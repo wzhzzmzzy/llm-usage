@@ -1,117 +1,13 @@
 use chrono::NaiveDate;
 
-use crate::core::adapter::ModelBreakdown;
+use crate::core::adapter::{BlockAggregate, DailyAggregate, MonthlyAggregate, SessionAggregate};
 use crate::core::error::NormalizeError;
 use crate::core::model::*;
-
-/// Raw daily aggregate from provider JSON
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RawDailyAggregate {
-    pub date: String,
-    #[serde(default)]
-    pub total_tokens: u64,
-    #[serde(default)]
-    pub input_tokens: u64,
-    #[serde(default)]
-    pub cache_read_tokens: u64,
-    #[serde(default)]
-    pub output_tokens: u64,
-    #[serde(default)]
-    pub reasoning_tokens: u64,
-    #[serde(default)]
-    pub request_count: Option<u64>,
-    #[serde(default)]
-    pub models_used: Option<Vec<String>>,
-    #[serde(default)]
-    pub model_breakdown: Option<Vec<ModelBreakdown>>,
-}
-
-/// Raw monthly aggregate from provider JSON
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RawMonthlyAggregate {
-    pub month: String,
-    #[serde(default)]
-    pub total_tokens: u64,
-    #[serde(default)]
-    pub input_tokens: u64,
-    #[serde(default)]
-    pub cache_read_tokens: u64,
-    #[serde(default)]
-    pub output_tokens: u64,
-    #[serde(default)]
-    pub reasoning_tokens: u64,
-    #[serde(default)]
-    pub request_count: Option<u64>,
-    #[serde(default)]
-    pub models_used: Option<Vec<String>>,
-    #[serde(default)]
-    pub model_breakdown: Option<Vec<ModelBreakdown>>,
-}
-
-/// Raw session aggregate from provider JSON
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RawSessionAggregate {
-    pub session_id: String,
-    #[serde(default)]
-    pub project_path: Option<String>,
-    #[serde(default)]
-    pub total_tokens: u64,
-    #[serde(default)]
-    pub input_tokens: u64,
-    #[serde(default)]
-    pub cache_read_tokens: u64,
-    #[serde(default)]
-    pub output_tokens: u64,
-    #[serde(default)]
-    pub reasoning_tokens: u64,
-    #[serde(default)]
-    pub request_count: Option<u64>,
-    #[serde(default)]
-    pub last_activity: Option<String>,
-    #[serde(default)]
-    pub models_used: Option<Vec<String>>,
-    #[serde(default)]
-    pub model_breakdown: Option<Vec<ModelBreakdown>>,
-}
-
-/// Raw block aggregate from provider JSON
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RawBlockAggregate {
-    pub block_id: String,
-    #[serde(default)]
-    pub start_time: String,
-    #[serde(default)]
-    pub end_time: String,
-    #[serde(default)]
-    pub actual_end_time: Option<String>,
-    #[serde(default)]
-    pub is_active: bool,
-    #[serde(default)]
-    pub total_tokens: u64,
-    #[serde(default)]
-    pub input_tokens: u64,
-    #[serde(default)]
-    pub cache_read_tokens: u64,
-    #[serde(default)]
-    pub output_tokens: u64,
-    #[serde(default)]
-    pub reasoning_tokens: u64,
-    #[serde(default)]
-    pub request_count: Option<u64>,
-    #[serde(default)]
-    pub models_used: Option<Vec<String>>,
-    #[serde(default)]
-    pub model_breakdown: Option<Vec<ModelBreakdown>>,
-}
 
 pub struct Normalizer;
 
 impl Normalizer {
-    pub fn normalize_daily(rows: &[RawDailyAggregate]) -> Result<DailyReport, NormalizeError> {
+    pub fn normalize_daily(rows: &[DailyAggregate]) -> Result<DailyReport, NormalizeError> {
         let mut days = Vec::new();
         let mut total_tokens = 0u64;
         let mut total_input = 0u64;
@@ -129,7 +25,7 @@ impl Normalizer {
             total_cache_read += row.cache_read_tokens;
             total_output += row.output_tokens;
             total_reasoning += row.reasoning_tokens;
-            total_requests += row.request_count.unwrap_or(0);
+            total_requests += row.request_count;
 
             days.push(DailyRow {
                 date,
@@ -138,9 +34,9 @@ impl Normalizer {
                 cache_read_tokens: row.cache_read_tokens,
                 output_tokens: row.output_tokens,
                 reasoning_tokens: row.reasoning_tokens,
-                request_count: row.request_count,
-                models_used: row.models_used.clone(),
-                model_breakdown: row.model_breakdown.clone(),
+                request_count: Some(row.request_count),
+                models_used: Some(row.models_used.clone()),
+                model_breakdown: Some(row.model_breakdown.clone()),
             });
         }
 
@@ -160,7 +56,7 @@ impl Normalizer {
         })
     }
 
-    pub fn normalize_monthly(rows: &[RawMonthlyAggregate]) -> Result<MonthlyReport, NormalizeError> {
+    pub fn normalize_monthly(rows: &[MonthlyAggregate]) -> Result<MonthlyReport, NormalizeError> {
         let mut months = Vec::new();
         let mut total_tokens = 0u64;
         let mut total_input = 0u64;
@@ -175,7 +71,7 @@ impl Normalizer {
             total_cache_read += row.cache_read_tokens;
             total_output += row.output_tokens;
             total_reasoning += row.reasoning_tokens;
-            total_requests += row.request_count.unwrap_or(0);
+            total_requests += row.request_count;
 
             months.push(MonthlyRow {
                 month: row.month.clone(),
@@ -184,9 +80,9 @@ impl Normalizer {
                 cache_read_tokens: row.cache_read_tokens,
                 output_tokens: row.output_tokens,
                 reasoning_tokens: row.reasoning_tokens,
-                request_count: row.request_count,
-                models_used: row.models_used.clone(),
-                model_breakdown: row.model_breakdown.clone(),
+                request_count: Some(row.request_count),
+                models_used: Some(row.models_used.clone()),
+                model_breakdown: Some(row.model_breakdown.clone()),
             });
         }
 
@@ -206,7 +102,7 @@ impl Normalizer {
         })
     }
 
-    pub fn normalize_session(rows: &[RawSessionAggregate]) -> Result<SessionReport, NormalizeError> {
+    pub fn normalize_session(rows: &[SessionAggregate]) -> Result<SessionReport, NormalizeError> {
         let mut sessions = Vec::new();
         let mut total_tokens = 0u64;
         let mut total_input = 0u64;
@@ -230,7 +126,7 @@ impl Normalizer {
             total_cache_read += row.cache_read_tokens;
             total_output += row.output_tokens;
             total_reasoning += row.reasoning_tokens;
-            total_requests += row.request_count.unwrap_or(0);
+            total_requests += row.request_count;
 
             sessions.push(SessionRow {
                 session_id: row.session_id.clone(),
@@ -240,10 +136,10 @@ impl Normalizer {
                 cache_read_tokens: row.cache_read_tokens,
                 output_tokens: row.output_tokens,
                 reasoning_tokens: row.reasoning_tokens,
-                request_count: row.request_count.unwrap_or(0),
+                request_count: row.request_count,
                 last_activity,
-                models_used: row.models_used.clone(),
-                model_breakdown: row.model_breakdown.clone(),
+                models_used: Some(row.models_used.clone()),
+                model_breakdown: Some(row.model_breakdown.clone()),
             });
         }
 
@@ -267,7 +163,7 @@ impl Normalizer {
         })
     }
 
-    pub fn normalize_blocks(rows: &[RawBlockAggregate]) -> Result<BlocksReport, NormalizeError> {
+    pub fn normalize_blocks(rows: &[BlockAggregate]) -> Result<BlocksReport, NormalizeError> {
         let mut blocks = Vec::new();
         let mut total_tokens = 0u64;
         let mut total_input = 0u64;
@@ -291,7 +187,7 @@ impl Normalizer {
             total_cache_read += row.cache_read_tokens;
             total_output += row.output_tokens;
             total_reasoning += row.reasoning_tokens;
-            total_requests += row.request_count.unwrap_or(0);
+            total_requests += row.request_count;
 
             blocks.push(BlockRow {
                 block_id: row.block_id.clone(),
@@ -303,7 +199,7 @@ impl Normalizer {
                 output_tokens: row.output_tokens,
                 reasoning_tokens: row.reasoning_tokens,
                 is_active: row.is_active,
-                models_used: row.models_used.clone(),
+                models_used: Some(row.models_used.clone()),
             });
         }
 
@@ -330,19 +226,20 @@ impl Normalizer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::adapter::ModelBreakdown;
 
     #[test]
     fn test_normalize_daily() {
-        let rows = vec![RawDailyAggregate {
+        let rows = vec![DailyAggregate {
             date: "2026-05-29".to_string(),
             total_tokens: 1500,
             input_tokens: 1000,
             cache_read_tokens: 200,
             output_tokens: 300,
             reasoning_tokens: 50,
-            request_count: Some(5),
-            models_used: Some(vec!["gpt-5.5".to_string()]),
-            model_breakdown: Some(vec![ModelBreakdown {
+            request_count: 5,
+            models_used: vec!["gpt-5.5".to_string()],
+            model_breakdown: vec![ModelBreakdown {
                 model: "gpt-5.5".to_string(),
                 input_tokens: 1000,
                 cache_read_tokens: 200,
@@ -350,7 +247,7 @@ mod tests {
                 reasoning_tokens: 50,
                 total_tokens: 1500,
                 request_count: 5,
-            }]),
+            }],
         }];
 
         let report = Normalizer::normalize_daily(&rows).unwrap();
@@ -371,16 +268,16 @@ mod tests {
 
     #[test]
     fn test_normalize_monthly() {
-        let rows = vec![RawMonthlyAggregate {
+        let rows = vec![MonthlyAggregate {
             month: "2026-05".to_string(),
             total_tokens: 5000,
             input_tokens: 3000,
             cache_read_tokens: 500,
             output_tokens: 1500,
             reasoning_tokens: 200,
-            request_count: Some(20),
-            models_used: Some(vec!["gpt-5.5".to_string(), "claude-sonnet-4".to_string()]),
-            model_breakdown: Some(vec![
+            request_count: 20,
+            models_used: vec!["gpt-5.5".to_string(), "claude-sonnet-4".to_string()],
+            model_breakdown: vec![
                 ModelBreakdown {
                     model: "gpt-5.5".to_string(),
                     input_tokens: 2000,
@@ -399,7 +296,7 @@ mod tests {
                     total_tokens: 1700,
                     request_count: 8,
                 },
-            ]),
+            ],
         }];
 
         let report = Normalizer::normalize_monthly(&rows).unwrap();
@@ -410,7 +307,7 @@ mod tests {
 
     #[test]
     fn test_normalize_session() {
-        let rows = vec![RawSessionAggregate {
+        let rows = vec![SessionAggregate {
             session_id: "test-session".to_string(),
             project_path: Some("/home/user/project".to_string()),
             total_tokens: 1500,
@@ -418,10 +315,10 @@ mod tests {
             cache_read_tokens: 200,
             output_tokens: 300,
             reasoning_tokens: 50,
-            request_count: Some(5),
+            request_count: 5,
             last_activity: Some("2026-05-29T10:00:00Z".to_string()),
-            models_used: Some(vec!["gpt-5.5".to_string()]),
-            model_breakdown: Some(vec![ModelBreakdown {
+            models_used: vec!["gpt-5.5".to_string()],
+            model_breakdown: vec![ModelBreakdown {
                 model: "gpt-5.5".to_string(),
                 input_tokens: 1000,
                 cache_read_tokens: 200,
@@ -429,7 +326,7 @@ mod tests {
                 reasoning_tokens: 50,
                 total_tokens: 1500,
                 request_count: 5,
-            }]),
+            }],
         }];
 
         let report = Normalizer::normalize_session(&rows).unwrap();
@@ -442,16 +339,16 @@ mod tests {
 
     #[test]
     fn test_daily_report_json_matches_frontend_types() {
-        let rows = vec![RawDailyAggregate {
+        let rows = vec![DailyAggregate {
             date: "2026-05-29".to_string(),
             total_tokens: 1500,
             input_tokens: 1000,
             cache_read_tokens: 200,
             output_tokens: 300,
             reasoning_tokens: 50,
-            request_count: Some(5),
-            models_used: Some(vec!["gpt-5.5".to_string()]),
-            model_breakdown: Some(vec![ModelBreakdown {
+            request_count: 5,
+            models_used: vec!["gpt-5.5".to_string()],
+            model_breakdown: vec![ModelBreakdown {
                 model: "gpt-5.5".to_string(),
                 input_tokens: 1000,
                 cache_read_tokens: 200,
@@ -459,7 +356,7 @@ mod tests {
                 reasoning_tokens: 50,
                 total_tokens: 1500,
                 request_count: 5,
-            }]),
+            }],
         }];
 
         let report = Normalizer::normalize_daily(&rows).unwrap();
@@ -489,7 +386,7 @@ mod tests {
 
     #[test]
     fn test_session_report_json_matches_frontend_types() {
-        let rows = vec![RawSessionAggregate {
+        let rows = vec![SessionAggregate {
             session_id: "test-session".to_string(),
             project_path: Some("/home/user/project".to_string()),
             total_tokens: 1500,
@@ -497,10 +394,10 @@ mod tests {
             cache_read_tokens: 200,
             output_tokens: 300,
             reasoning_tokens: 50,
-            request_count: Some(5),
+            request_count: 5,
             last_activity: Some("2026-05-29T10:00:00Z".to_string()),
-            models_used: Some(vec!["gpt-5.5".to_string()]),
-            model_breakdown: Some(vec![ModelBreakdown {
+            models_used: vec!["gpt-5.5".to_string()],
+            model_breakdown: vec![ModelBreakdown {
                 model: "gpt-5.5".to_string(),
                 input_tokens: 1000,
                 cache_read_tokens: 200,
@@ -508,7 +405,7 @@ mod tests {
                 reasoning_tokens: 50,
                 total_tokens: 1500,
                 request_count: 5,
-            }]),
+            }],
         }];
 
         let report = Normalizer::normalize_session(&rows).unwrap();
