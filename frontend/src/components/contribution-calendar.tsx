@@ -1,8 +1,13 @@
 import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import type { DailyReport, PricingMap, ModelBreakdown } from '../api/types';
+import { useTranslation } from '@/i18n/context';
+import { LANG_TO_LOCALE } from '@/i18n/index';
+import { getCellHighlight } from '@/lib/selection';
+import type { Selection } from '@/lib/selection';
 
 interface ContributionCalendarProps {
   data: Record<string, DailyReport>;
+  selection?: Selection;
   onDayClick?: (date: string) => void;
   pricing?: PricingMap | null;
 }
@@ -13,6 +18,7 @@ interface DayData {
   inputTokens: number;
   cacheReadTokens: number;
   outputTokens: number;
+  reasoningTokens: number;
   models: string[];
   modelBreakdown?: ModelBreakdown[];
 }
@@ -34,8 +40,6 @@ const COLORS = [
   '#30a14e',
   '#216e39',
 ];
-
-const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const DEFAULT_PRICING = { input: 3e-6, output: 15e-6, cacheCreate: 3.75e-6, cacheRead: 0.3e-6 };
 
@@ -62,11 +66,11 @@ function estimateDayCost(day: DayData, pricing: PricingMap | null | undefined): 
   if (day.modelBreakdown && day.modelBreakdown.length > 0) {
     return day.modelBreakdown.reduce((total, mb) => {
       const p = findModelPricing(mb.model, pricing);
-      return total + mb.inputTokens * p.input + mb.outputTokens * p.output + mb.cacheReadTokens * p.cacheRead;
+      return total + mb.inputTokens * p.input + (mb.outputTokens + mb.reasoningTokens) * p.output + mb.cacheReadTokens * p.cacheRead;
     }, 0);
   }
   const p = DEFAULT_PRICING;
-  return day.inputTokens * p.input + day.outputTokens * p.output + day.cacheReadTokens * p.cacheRead;
+  return day.inputTokens * p.input + (day.outputTokens + day.reasoningTokens) * p.output + day.cacheReadTokens * p.cacheRead;
 }
 
 function getIntensity(tokens: number): number {
@@ -77,7 +81,29 @@ function getIntensity(tokens: number): number {
   return 4;
 }
 
-export function ContributionCalendar({ data, onDayClick, pricing }: ContributionCalendarProps) {
+export function ContributionCalendar({ data, selection = { type: 'none' }, onDayClick, pricing }: ContributionCalendarProps) {
+  const { lang, t } = useTranslation();
+  const locale = LANG_TO_LOCALE[lang];
+
+  // 使用 Intl 生成本地化月份标签（short 格式：Jan/1月/1月 等）
+  const monthFormatter = new Intl.DateTimeFormat(locale, { month: 'short' });
+  const getMonthLabel = (monthIndex: number) => {
+    return monthFormatter.format(new Date(2024, monthIndex, 1));
+  };
+
+  // 星期标签：仅显示周一/周三/周五（索引 1,3,5），其余空字符串
+  const weekdayFormatter = new Intl.DateTimeFormat(locale, { weekday: 'short' });
+  // 2024-01-01 是周一，后续 +2/+4 天得到周三/周五
+  const DAY_LABELS = [
+    '',
+    weekdayFormatter.format(new Date(2024, 0, 1)),  // Mon
+    '',
+    weekdayFormatter.format(new Date(2024, 0, 3)),  // Wed
+    '',
+    weekdayFormatter.format(new Date(2024, 0, 5)),  // Fri
+    '',
+  ];
+
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties>({});
@@ -104,6 +130,7 @@ export function ContributionCalendar({ data, onDayClick, pricing }: Contribution
         inputTokens: day?.inputTokens ?? 0,
         cacheReadTokens: day?.cacheReadTokens ?? 0,
         outputTokens: day?.outputTokens ?? 0,
+        reasoningTokens: day?.reasoningTokens ?? 0,
         models: day?.modelsUsed ?? [],
         modelBreakdown: day?.modelBreakdown,
       });
@@ -132,7 +159,7 @@ export function ContributionCalendar({ data, onDayClick, pricing }: Contribution
       const month = firstDay.getMonth();
       if (month !== lastMonth) {
         result.push({
-          label: MONTH_LABELS[month],
+          label: getMonthLabel(month),
           weekIndex: i,
         });
         lastMonth = month;
@@ -140,7 +167,8 @@ export function ContributionCalendar({ data, onDayClick, pricing }: Contribution
     });
 
     return result;
-  }, [grid]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grid, locale]);
 
   const handleMouseEnter = useCallback((day: DayData, e: React.MouseEvent) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -207,7 +235,7 @@ export function ContributionCalendar({ data, onDayClick, pricing }: Contribution
             </text>
           ))}
 
-          {['', 'Mon', '', 'Wed', '', 'Fri', ''].map((label, i) => (
+          {DAY_LABELS.map((label, i) => (
             <text
               key={i}
               x={0}
@@ -222,6 +250,11 @@ export function ContributionCalendar({ data, onDayClick, pricing }: Contribution
           {grid.map((week, weekIndex) =>
             week.map((day, dayIndex) => {
               const intensity = getIntensity(day.tokens);
+              const highlight = getCellHighlight(
+                day.date,
+                selection,
+                tooltip?.day.date ?? null,
+              );
               return (
                 <rect
                   key={day.date}
@@ -231,7 +264,24 @@ export function ContributionCalendar({ data, onDayClick, pricing }: Contribution
                   height={CELL_SIZE}
                   rx={2}
                   fill={COLORS[intensity]}
-                  className="cursor-pointer hover:stroke-2 hover:stroke-foreground"
+                  stroke={
+                    highlight === 'start' || highlight === 'end'
+                      ? 'white'
+                      : highlight === 'in-range' || highlight === 'preview'
+                        ? 'currentColor'
+                        : undefined
+                  }
+                  strokeWidth={
+                    highlight === 'start' || highlight === 'end'
+                      ? 2
+                      : highlight === 'in-range'
+                        ? 1
+                        : highlight === 'preview'
+                          ? 1
+                          : undefined
+                  }
+                  opacity={highlight === 'preview' ? 0.7 : undefined}
+                  className={`cursor-pointer${highlight === 'none' ? ' hover:stroke-2 hover:stroke-foreground' : ''}`}
                   onClick={() => onDayClick?.(day.date)}
                   onMouseEnter={(e) => handleMouseEnter(day, e)}
                   onMouseLeave={handleMouseLeave}
@@ -250,18 +300,19 @@ export function ContributionCalendar({ data, onDayClick, pricing }: Contribution
         >
           <div className="font-medium mb-1 text-gray-900">{tooltip.day.date}</div>
           <div className="space-y-0.5 text-gray-600">
-            <div>Total: <span className="text-gray-900 font-medium">{tooltip.day.tokens.toLocaleString()}</span></div>
-            <div>Input: <span className="text-gray-900">{tooltip.day.inputTokens.toLocaleString()}</span></div>
-            <div>Cache Hit: <span className="text-gray-900">{tooltip.day.cacheReadTokens.toLocaleString()}</span></div>
-            <div>Output: <span className="text-gray-900">{tooltip.day.outputTokens.toLocaleString()}</span></div>
-            <div>Cost: <span className="text-gray-900 font-medium">{fmtCost(estimateDayCost(tooltip.day, pricing))}</span></div>
+            <div>{t('cal.total')}<span className="text-gray-900 font-medium">{tooltip.day.tokens.toLocaleString()}</span></div>
+            <div>{t('cal.input')}<span className="text-gray-900">{tooltip.day.inputTokens.toLocaleString()}</span></div>
+            <div>{t('cal.cacheHit')}<span className="text-gray-900">{tooltip.day.cacheReadTokens.toLocaleString()}</span></div>
+            <div>{t('cal.output')}<span className="text-gray-900">{tooltip.day.outputTokens.toLocaleString()}</span></div>
+            <div>{t('cal.reasoning')}<span className="text-gray-900">{tooltip.day.reasoningTokens.toLocaleString()}</span></div>
+            <div>{t('cal.cost')}<span className="text-gray-900 font-medium">{fmtCost(estimateDayCost(tooltip.day, pricing))}</span></div>
             {tooltip.day.models.length > 0 && (
               <div className="mt-1 pt-1 border-t border-gray-200">
                 {tooltip.day.models.slice(0, 3).map((m, i) => (
                   <div key={i} className="text-xs truncate max-w-[200px]">{m}</div>
                 ))}
                 {tooltip.day.models.length > 3 && (
-                  <div className="text-xs">+{tooltip.day.models.length - 3} more</div>
+                  <div className="text-xs">{t('calendar.moreModels', { n: tooltip.day.models.length - 3 })}</div>
                 )}
               </div>
             )}
@@ -270,7 +321,7 @@ export function ContributionCalendar({ data, onDayClick, pricing }: Contribution
       )}
 
       <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
-        <span>Less</span>
+        <span>{t('calendar.less')}</span>
         {COLORS.map((color, i) => (
           <div
             key={i}
@@ -278,7 +329,7 @@ export function ContributionCalendar({ data, onDayClick, pricing }: Contribution
             style={{ backgroundColor: color }}
           />
         ))}
-        <span>More</span>
+        <span>{t('calendar.more')}</span>
       </div>
     </div>
   );

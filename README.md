@@ -10,22 +10,57 @@ Data stays on your machine. No cloud sync, no accounts.
 
 Multiple AI coding assistants, multiple usage trackers, no unified view. This tool aggregates token consumption from ccusage (Claude), codex CLI, gemini CLI, and opencode into one dashboard with daily/monthly/session breakdowns.
 
-## Install
+## Run modes
 
-Download from the [Releases](../../releases) page — `.dmg` for macOS, `.deb`/`.AppImage` for Linux, `.msi` for Windows.
+There are two ways to run the dashboard, both built from source:
 
-**macOS:** The app is unsigned. Right-click the `.dmg` → Open to bypass Gatekeeper on first launch.
+- **Tauri desktop app** — a native macOS app with a system tray icon. Recommended for daily use.
+- **Local server** — the same dashboard served over HTTP. Recommended for headless setups, SSH sessions, or cron-driven refreshes.
 
-To build from source (requires Rust 1.75+, Node.js 20+, [pnpm](https://pnpm.io/)):
+No signed prebuilt binaries are published for now (see the note in the Tauri section), so building from source is the way to go.
+
+### Prerequisites
+
+- Rust 1.75+
+- Node.js 20+ and [pnpm](https://pnpm.io/)
+- Tauri CLI (desktop app only): `cargo install tauri-cli --version "^1"`
+- macOS: Xcode Command Line Tools
+
+### Mode 1: Tauri desktop app (recommended)
+
+#### Build
 
 ```bash
 git clone <repo-url>
 cd llm-usage
-cd frontend && pnpm install && cd ..
+pnpm --prefix frontend install
 cargo tauri build
 ```
 
-## Run
+`cargo tauri build` builds the frontend automatically (`pnpm --prefix frontend build`) and produces:
+
+- `target/release/bundle/macos/LLM Usage Dashboard.app` — the app itself
+- `target/release/bundle/dmg/LLM Usage Dashboard_<version>_aarch64.dmg` — a disk image for keeping or copying to your other machines
+
+#### Run
+
+Open `LLM Usage Dashboard.app`. It sits in the system tray, loads your local usage data on launch, and refreshes in the background.
+
+**No Apple Developer account is needed** for personal use. The app is unsigned, so on first launch macOS may block it: right-click the `.app` → Open → confirm. This unsigned build works fine on your own machines; it just can't be distributed to arbitrary users (Gatekeeper would warn them), which is why no public `.dmg` download is published.
+
+### Mode 2: Local server
+
+#### Build
+
+```bash
+git clone <repo-url>
+cd llm-usage
+pnpm --prefix frontend install
+pnpm --prefix frontend build   # the server embeds frontend/dist
+cargo build --release
+```
+
+#### Run
 
 ```bash
 # Web dashboard at http://127.0.0.1:3766
@@ -37,6 +72,8 @@ cargo tauri build
 # Check if ccusage and runner are available
 ./target/release/llm-usage health
 ```
+
+Host and port are configurable, see below.
 
 ## Config
 
@@ -65,6 +102,7 @@ llm-usage
 │   │   └── refresh.rs  # orchestrates data collection, stores snapshots
 │   ├── server/         # axum HTTP API + static file serving
 │   └── cli.rs          # clap-based CLI
+├── src-tauri/          # Tauri desktop shell (tray app, shares the same core)
 └── frontend/           # React + Recharts dashboard
 ```
 

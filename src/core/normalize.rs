@@ -18,6 +18,8 @@ pub struct RawDailyAggregate {
     #[serde(default)]
     pub output_tokens: u64,
     #[serde(default)]
+    pub reasoning_tokens: u64,
+    #[serde(default)]
     pub request_count: Option<u64>,
     #[serde(default)]
     pub models_used: Option<Vec<String>>,
@@ -38,6 +40,8 @@ pub struct RawMonthlyAggregate {
     pub cache_read_tokens: u64,
     #[serde(default)]
     pub output_tokens: u64,
+    #[serde(default)]
+    pub reasoning_tokens: u64,
     #[serde(default)]
     pub request_count: Option<u64>,
     #[serde(default)]
@@ -61,6 +65,8 @@ pub struct RawSessionAggregate {
     pub cache_read_tokens: u64,
     #[serde(default)]
     pub output_tokens: u64,
+    #[serde(default)]
+    pub reasoning_tokens: u64,
     #[serde(default)]
     pub request_count: Option<u64>,
     #[serde(default)]
@@ -93,6 +99,8 @@ pub struct RawBlockAggregate {
     #[serde(default)]
     pub output_tokens: u64,
     #[serde(default)]
+    pub reasoning_tokens: u64,
+    #[serde(default)]
     pub request_count: Option<u64>,
     #[serde(default)]
     pub models_used: Option<Vec<String>>,
@@ -109,6 +117,7 @@ impl Normalizer {
         let mut total_input = 0u64;
         let mut total_cache_read = 0u64;
         let mut total_output = 0u64;
+        let mut total_reasoning = 0u64;
         let mut total_requests = 0u64;
 
         for row in rows {
@@ -119,6 +128,7 @@ impl Normalizer {
             total_input += row.input_tokens;
             total_cache_read += row.cache_read_tokens;
             total_output += row.output_tokens;
+            total_reasoning += row.reasoning_tokens;
             total_requests += row.request_count.unwrap_or(0);
 
             days.push(DailyRow {
@@ -127,6 +137,7 @@ impl Normalizer {
                 input_tokens: row.input_tokens,
                 cache_read_tokens: row.cache_read_tokens,
                 output_tokens: row.output_tokens,
+                reasoning_tokens: row.reasoning_tokens,
                 request_count: row.request_count,
                 models_used: row.models_used.clone(),
                 model_breakdown: row.model_breakdown.clone(),
@@ -142,6 +153,7 @@ impl Normalizer {
                 input_tokens: total_input,
                 cache_read_tokens: total_cache_read,
                 output_tokens: total_output,
+                reasoning_tokens: total_reasoning,
                 request_count: Some(total_requests),
                 model_breakdown: None,
             },
@@ -154,6 +166,7 @@ impl Normalizer {
         let mut total_input = 0u64;
         let mut total_cache_read = 0u64;
         let mut total_output = 0u64;
+        let mut total_reasoning = 0u64;
         let mut total_requests = 0u64;
 
         for row in rows {
@@ -161,6 +174,7 @@ impl Normalizer {
             total_input += row.input_tokens;
             total_cache_read += row.cache_read_tokens;
             total_output += row.output_tokens;
+            total_reasoning += row.reasoning_tokens;
             total_requests += row.request_count.unwrap_or(0);
 
             months.push(MonthlyRow {
@@ -169,6 +183,7 @@ impl Normalizer {
                 input_tokens: row.input_tokens,
                 cache_read_tokens: row.cache_read_tokens,
                 output_tokens: row.output_tokens,
+                reasoning_tokens: row.reasoning_tokens,
                 request_count: row.request_count,
                 models_used: row.models_used.clone(),
                 model_breakdown: row.model_breakdown.clone(),
@@ -184,6 +199,7 @@ impl Normalizer {
                 input_tokens: total_input,
                 cache_read_tokens: total_cache_read,
                 output_tokens: total_output,
+                reasoning_tokens: total_reasoning,
                 request_count: Some(total_requests),
                 model_breakdown: None,
             },
@@ -196,6 +212,7 @@ impl Normalizer {
         let mut total_input = 0u64;
         let mut total_cache_read = 0u64;
         let mut total_output = 0u64;
+        let mut total_reasoning = 0u64;
         let mut total_requests = 0u64;
 
         for row in rows {
@@ -212,6 +229,7 @@ impl Normalizer {
             total_input += row.input_tokens;
             total_cache_read += row.cache_read_tokens;
             total_output += row.output_tokens;
+            total_reasoning += row.reasoning_tokens;
             total_requests += row.request_count.unwrap_or(0);
 
             sessions.push(SessionRow {
@@ -221,6 +239,7 @@ impl Normalizer {
                 input_tokens: row.input_tokens,
                 cache_read_tokens: row.cache_read_tokens,
                 output_tokens: row.output_tokens,
+                reasoning_tokens: row.reasoning_tokens,
                 request_count: row.request_count.unwrap_or(0),
                 last_activity,
                 models_used: row.models_used.clone(),
@@ -241,6 +260,7 @@ impl Normalizer {
                 input_tokens: total_input,
                 cache_read_tokens: total_cache_read,
                 output_tokens: total_output,
+                reasoning_tokens: total_reasoning,
                 request_count: Some(total_requests),
                 model_breakdown: None,
             },
@@ -253,6 +273,7 @@ impl Normalizer {
         let mut total_input = 0u64;
         let mut total_cache_read = 0u64;
         let mut total_output = 0u64;
+        let mut total_reasoning = 0u64;
         let mut total_requests = 0u64;
 
         for row in rows {
@@ -269,6 +290,7 @@ impl Normalizer {
             total_input += row.input_tokens;
             total_cache_read += row.cache_read_tokens;
             total_output += row.output_tokens;
+            total_reasoning += row.reasoning_tokens;
             total_requests += row.request_count.unwrap_or(0);
 
             blocks.push(BlockRow {
@@ -279,6 +301,7 @@ impl Normalizer {
                 input_tokens: row.input_tokens,
                 cache_read_tokens: row.cache_read_tokens,
                 output_tokens: row.output_tokens,
+                reasoning_tokens: row.reasoning_tokens,
                 is_active: row.is_active,
                 models_used: row.models_used.clone(),
             });
@@ -296,6 +319,7 @@ impl Normalizer {
                 input_tokens: total_input,
                 cache_read_tokens: total_cache_read,
                 output_tokens: total_output,
+                reasoning_tokens: total_reasoning,
                 request_count: Some(total_requests),
                 model_breakdown: None,
             },
@@ -315,6 +339,7 @@ mod tests {
             input_tokens: 1000,
             cache_read_tokens: 200,
             output_tokens: 300,
+            reasoning_tokens: 50,
             request_count: Some(5),
             models_used: Some(vec!["gpt-5.5".to_string()]),
             model_breakdown: Some(vec![ModelBreakdown {
@@ -322,6 +347,7 @@ mod tests {
                 input_tokens: 1000,
                 cache_read_tokens: 200,
                 output_tokens: 300,
+                reasoning_tokens: 50,
                 total_tokens: 1500,
                 request_count: 5,
             }]),
@@ -351,6 +377,7 @@ mod tests {
             input_tokens: 3000,
             cache_read_tokens: 500,
             output_tokens: 1500,
+            reasoning_tokens: 200,
             request_count: Some(20),
             models_used: Some(vec!["gpt-5.5".to_string(), "claude-sonnet-4".to_string()]),
             model_breakdown: Some(vec![
@@ -359,6 +386,7 @@ mod tests {
                     input_tokens: 2000,
                     cache_read_tokens: 300,
                     output_tokens: 1000,
+                    reasoning_tokens: 120,
                     total_tokens: 3300,
                     request_count: 12,
                 },
@@ -367,6 +395,7 @@ mod tests {
                     input_tokens: 1000,
                     cache_read_tokens: 200,
                     output_tokens: 500,
+                    reasoning_tokens: 80,
                     total_tokens: 1700,
                     request_count: 8,
                 },
@@ -388,6 +417,7 @@ mod tests {
             input_tokens: 1000,
             cache_read_tokens: 200,
             output_tokens: 300,
+            reasoning_tokens: 50,
             request_count: Some(5),
             last_activity: Some("2026-05-29T10:00:00Z".to_string()),
             models_used: Some(vec!["gpt-5.5".to_string()]),
@@ -396,6 +426,7 @@ mod tests {
                 input_tokens: 1000,
                 cache_read_tokens: 200,
                 output_tokens: 300,
+                reasoning_tokens: 50,
                 total_tokens: 1500,
                 request_count: 5,
             }]),
@@ -417,6 +448,7 @@ mod tests {
             input_tokens: 1000,
             cache_read_tokens: 200,
             output_tokens: 300,
+            reasoning_tokens: 50,
             request_count: Some(5),
             models_used: Some(vec!["gpt-5.5".to_string()]),
             model_breakdown: Some(vec![ModelBreakdown {
@@ -424,6 +456,7 @@ mod tests {
                 input_tokens: 1000,
                 cache_read_tokens: 200,
                 output_tokens: 300,
+                reasoning_tokens: 50,
                 total_tokens: 1500,
                 request_count: 5,
             }]),
@@ -441,6 +474,7 @@ mod tests {
         assert!(day.get("inputTokens").is_some(), "Missing day.inputTokens");
         assert!(day.get("cacheReadTokens").is_some(), "Missing day.cacheReadTokens");
         assert!(day.get("outputTokens").is_some(), "Missing day.outputTokens");
+        assert!(day.get("reasoningTokens").is_some(), "Missing day.reasoningTokens");
         assert!(day.get("requestCount").is_some(), "Missing day.requestCount");
         assert!(day.get("modelsUsed").is_some(), "Missing day.modelsUsed");
         assert!(day.get("modelBreakdown").is_some(), "Missing day.modelBreakdown");
@@ -450,6 +484,7 @@ mod tests {
         assert!(totals.get("inputTokens").is_some(), "Missing totals.inputTokens");
         assert!(totals.get("cacheReadTokens").is_some(), "Missing totals.cacheReadTokens");
         assert!(totals.get("outputTokens").is_some(), "Missing totals.outputTokens");
+        assert!(totals.get("reasoningTokens").is_some(), "Missing totals.reasoningTokens");
     }
 
     #[test]
@@ -461,6 +496,7 @@ mod tests {
             input_tokens: 1000,
             cache_read_tokens: 200,
             output_tokens: 300,
+            reasoning_tokens: 50,
             request_count: Some(5),
             last_activity: Some("2026-05-29T10:00:00Z".to_string()),
             models_used: Some(vec!["gpt-5.5".to_string()]),
@@ -469,6 +505,7 @@ mod tests {
                 input_tokens: 1000,
                 cache_read_tokens: 200,
                 output_tokens: 300,
+                reasoning_tokens: 50,
                 total_tokens: 1500,
                 request_count: 5,
             }]),
@@ -486,6 +523,7 @@ mod tests {
         assert!(session.get("inputTokens").is_some(), "Missing session.inputTokens");
         assert!(session.get("cacheReadTokens").is_some(), "Missing session.cacheReadTokens");
         assert!(session.get("outputTokens").is_some(), "Missing session.outputTokens");
+        assert!(session.get("reasoningTokens").is_some(), "Missing session.reasoningTokens");
         assert!(session.get("requestCount").is_some(), "Missing session.requestCount");
         assert!(session.get("lastActivity").is_some(), "Missing session.lastActivity");
         assert!(session.get("modelsUsed").is_some(), "Missing session.modelsUsed");

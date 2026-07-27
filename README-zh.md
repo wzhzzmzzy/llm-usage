@@ -10,22 +10,57 @@
 
 多个 AI 编程助手，多个用量追踪工具，没有统一视图。这个工具将 ccusage (Claude)、codex CLI、gemini CLI 和 opencode 的 token 消耗汇总到一个看板中，支持按日/月/会话维度查看。
 
-## 安装
+## 运行模式
 
-在 [Releases](../../releases) 页面下载 — macOS 下载 `.dmg`，Linux 下载 `.deb` / `.AppImage`，Windows 下载 `.msi`。
+看板有两种运行方式，均从源码构建：
 
-**macOS：** 安装包未签名。首次打开时右键点击 `.dmg` → 打开，绕过 Gatekeeper 拦截。
+- **Tauri 桌面应用** —— 原生 macOS 应用，带系统托盘图标。日常使用推荐。
+- **本地 server** —— 同一个看板以 HTTP 服务形式运行。适合无头环境、SSH 会话或 cron 定时刷新。
 
-从源码构建（需要 Rust 1.75+、Node.js 20+、[pnpm](https://pnpm.io/)）：
+目前暂未发布签名预编译包（原因见 Tauri 一节），所以从源码构建是标准安装方式。
+
+### 前置依赖
+
+- Rust 1.75+
+- Node.js 20+ 和 [pnpm](https://pnpm.io/)
+- Tauri CLI（仅桌面应用需要）：`cargo install tauri-cli --version "^1"`
+- macOS：Xcode Command Line Tools
+
+### 模式一：Tauri 桌面应用（推荐）
+
+#### 构建
 
 ```bash
 git clone <repo-url>
 cd llm-usage
-cd frontend && pnpm install && cd ..
+pnpm --prefix frontend install
 cargo tauri build
 ```
 
-## 运行
+`cargo tauri build` 会自动构建前端（`pnpm --prefix frontend build`），产出：
+
+- `target/release/bundle/macos/LLM Usage Dashboard.app` —— 应用本体
+- `target/release/bundle/dmg/LLM Usage Dashboard_<版本号>_aarch64.dmg` —— 磁盘镜像，可留存或拷贝到自己的其他机器
+
+#### 运行
+
+打开 `LLM Usage Dashboard.app`。应用驻留在系统托盘，启动时加载本地用量数据并在后台刷新。
+
+**个人使用不需要 Apple 开发者账号**。应用未签名，首次打开时 macOS 可能拦截：右键点击 `.app` → 打开 → 确认即可。未签名构建在你自己的机器上完全可用，只是无法分发给任意用户（对方的 Gatekeeper 会告警），这也是暂不发布公共 `.dmg` 下载的原因。
+
+### 模式二：本地 server
+
+#### 构建
+
+```bash
+git clone <repo-url>
+cd llm-usage
+pnpm --prefix frontend install
+pnpm --prefix frontend build   # server 会内嵌 frontend/dist
+cargo build --release
+```
+
+#### 运行
 
 ```bash
 # Web 看板，访问 http://127.0.0.1:3766
@@ -37,6 +72,8 @@ cargo tauri build
 # 检查 ccusage 和 runner 是否可用
 ./target/release/llm-usage health
 ```
+
+监听地址和端口可配置，见下文。
 
 ## 配置
 
@@ -65,6 +102,7 @@ llm-usage
 │   │   └── refresh.rs  # 协调数据采集，存储快照
 │   ├── server/         # axum HTTP API + 静态文件服务
 │   └── cli.rs          # 基于 clap 的命令行接口
+├── src-tauri/          # Tauri 桌面外壳（托盘应用，共用同一套核心逻辑）
 └── frontend/           # React + Recharts 看板
 ```
 

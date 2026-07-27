@@ -6,7 +6,42 @@ use llm_usage::core::adapter::opencode::OpenCodeAdapter;
 use llm_usage::core::model::*;
 use llm_usage::core::normalize::*;
 use serde::Serialize;
+use serde::Deserialize;
+use std::fs;
+use std::path::PathBuf;
 use std::sync::Mutex;
+use tauri::{
+    CustomMenuItem, Manager, SystemTray, SystemTrayEvent, SystemTrayMenu,
+    SystemTrayMenuItem,
+};
+
+#[derive(Serialize, Deserialize, Default, Clone)]
+struct AppConfig {
+    #[serde(default)]
+    language: String,
+}
+
+fn config_path() -> Option<PathBuf> {
+    dirs::config_dir().map(|d| d.join("llm-usage").join("config.json"))
+}
+
+fn load_config() -> AppConfig {
+    config_path()
+        .and_then(|p| fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str::<AppConfig>(&s).ok())
+        .unwrap_or_default()
+}
+
+fn save_config(config: &AppConfig) {
+    if let Some(path) = config_path() {
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if let Ok(json) = serde_json::to_string_pretty(config) {
+            let _ = fs::write(path, json);
+        }
+    }
+}
 
 struct AppState {
     entries: Mutex<Option<CachedEntries>>,
@@ -44,6 +79,8 @@ struct RefreshStatus {
 }
 
 fn load_all_entries() -> Vec<(Source, Vec<UsageEntry>)> {
+    use rayon::prelude::*;
+
     let adapters: Vec<Box<dyn UsageAdapter>> = vec![
         Box::new(ClaudeAdapter::new()),
         Box::new(CodexAdapter::new()),
@@ -52,7 +89,7 @@ fn load_all_entries() -> Vec<(Source, Vec<UsageEntry>)> {
     ];
 
     adapters
-        .into_iter()
+        .into_par_iter()
         .filter_map(|adapter| {
             let source = adapter.source();
             let paths = adapter.find_data_paths().ok()?;
@@ -95,6 +132,7 @@ fn build_snapshot(cached: &CachedEntries) -> Snapshot {
             input_tokens: a.input_tokens,
             cache_read_tokens: a.cache_read_tokens,
             output_tokens: a.output_tokens,
+            reasoning_tokens: a.reasoning_tokens,
             request_count: Some(a.request_count),
             models_used: Some(a.models_used.clone()),
             model_breakdown: Some(a.model_breakdown.clone()),
@@ -106,6 +144,7 @@ fn build_snapshot(cached: &CachedEntries) -> Snapshot {
             input_tokens: a.input_tokens,
             cache_read_tokens: a.cache_read_tokens,
             output_tokens: a.output_tokens,
+            reasoning_tokens: a.reasoning_tokens,
             request_count: Some(a.request_count),
             models_used: Some(a.models_used.clone()),
             model_breakdown: Some(a.model_breakdown.clone()),
@@ -118,6 +157,7 @@ fn build_snapshot(cached: &CachedEntries) -> Snapshot {
             input_tokens: a.input_tokens,
             cache_read_tokens: a.cache_read_tokens,
             output_tokens: a.output_tokens,
+            reasoning_tokens: a.reasoning_tokens,
             request_count: Some(a.request_count),
             last_activity: a.last_activity.clone(),
             models_used: Some(a.models_used.clone()),
@@ -134,6 +174,7 @@ fn build_snapshot(cached: &CachedEntries) -> Snapshot {
             input_tokens: a.input_tokens,
             cache_read_tokens: a.cache_read_tokens,
             output_tokens: a.output_tokens,
+            reasoning_tokens: a.reasoning_tokens,
             request_count: Some(a.request_count),
             models_used: Some(a.models_used.clone()),
             model_breakdown: Some(a.model_breakdown.clone()),
@@ -177,6 +218,7 @@ fn build_snapshot(cached: &CachedEntries) -> Snapshot {
         input_tokens: a.input_tokens,
         cache_read_tokens: a.cache_read_tokens,
         output_tokens: a.output_tokens,
+        reasoning_tokens: a.reasoning_tokens,
         request_count: Some(a.request_count),
         models_used: Some(a.models_used.clone()),
         model_breakdown: Some(a.model_breakdown.clone()),
@@ -188,6 +230,7 @@ fn build_snapshot(cached: &CachedEntries) -> Snapshot {
         input_tokens: a.input_tokens,
         cache_read_tokens: a.cache_read_tokens,
         output_tokens: a.output_tokens,
+        reasoning_tokens: a.reasoning_tokens,
         request_count: Some(a.request_count),
         models_used: Some(a.models_used.clone()),
         model_breakdown: Some(a.model_breakdown.clone()),
@@ -200,6 +243,7 @@ fn build_snapshot(cached: &CachedEntries) -> Snapshot {
         input_tokens: a.input_tokens,
         cache_read_tokens: a.cache_read_tokens,
         output_tokens: a.output_tokens,
+        reasoning_tokens: a.reasoning_tokens,
         request_count: Some(a.request_count),
         last_activity: a.last_activity.clone(),
         models_used: Some(a.models_used.clone()),
@@ -216,6 +260,7 @@ fn build_snapshot(cached: &CachedEntries) -> Snapshot {
         input_tokens: a.input_tokens,
         cache_read_tokens: a.cache_read_tokens,
         output_tokens: a.output_tokens,
+        reasoning_tokens: a.reasoning_tokens,
         request_count: Some(a.request_count),
         models_used: Some(a.models_used.clone()),
         model_breakdown: Some(a.model_breakdown.clone()),
@@ -330,6 +375,35 @@ fn refresh_status(state: tauri::State<'_, AppState>) -> RefreshStatus {
 }
 
 #[tauri::command]
+fn get_language() -> String {
+    load_config().language
+}
+
+const LANG_OPTIONS: &[(&str, &str)] = &[
+    ("zh-CN", "简体中文"),
+    ("zh-TW", "繁體中文"),
+    ("ja", "日本語"),
+    ("en", "English"),
+];
+
+fn build_tray_menu(current_lang: &str) -> SystemTrayMenu {
+    let mut menu = SystemTrayMenu::new();
+    for (id, label) in LANG_OPTIONS {
+        // 当前语言前加 ✓，其他前加空格对齐
+        let display = if *id == current_lang {
+            format!("✓ {}", label)
+        } else {
+            format!("  {}", label)
+        };
+        menu = menu.add_item(CustomMenuItem::new(id.to_string(), display));
+    }
+    menu = menu
+        .add_native_item(SystemTrayMenuItem::Separator)
+        .add_item(CustomMenuItem::new("quit", "退出 / Quit"));
+    menu
+}
+
+#[tauri::command]
 fn health() -> serde_json::Value {
     serde_json::json!({
         "status": "healthy",
@@ -341,7 +415,61 @@ fn health() -> serde_json::Value {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let config = load_config();
+    let initial_lang = config.language.clone();
+    let tray_menu = build_tray_menu(&config.language);
+
     tauri::Builder::default()
+        .system_tray(SystemTray::new().with_menu(tray_menu))
+        .setup(move |app| {
+            // 初始语言注入：在所有页面 JS 执行前设置 window.__INITIAL_LANG__
+            // 如果没有保存的语言偏好，不注入（前端 detectLang() 接管）
+            let valid_langs = ["zh-CN", "zh-TW", "ja", "en"];
+            let init_script = if valid_langs.contains(&initial_lang.as_str()) {
+                format!("window.__INITIAL_LANG__ = '{}';", initial_lang)
+            } else {
+                String::new()
+            };
+
+            tauri::WindowBuilder::new(
+                app,
+                "main",
+                tauri::WindowUrl::App("index.html".into()),
+            )
+            .title("LLM Usage Dashboard")
+            .inner_size(1055.0, 800.0)
+            .max_inner_size(1055.0, f64::MAX)
+            .resizable(true)
+            .initialization_script(&init_script)
+            .build()?;
+
+            Ok(())
+        })
+        .on_system_tray_event(|app, event| {
+            if let SystemTrayEvent::MenuItemClick { id, .. } = event {
+                match id.as_str() {
+                    lang @ ("zh-CN" | "zh-TW" | "ja" | "en") => {
+                        // 1. 持久化到配置文件
+                        let mut cfg = load_config();
+                        cfg.language = lang.to_string();
+                        save_config(&cfg);
+
+                        // 2. 更新托盘菜单勾选项
+                        let new_menu = build_tray_menu(lang);
+                        if let Err(e) = app.tray_handle().set_menu(new_menu) {
+                            eprintln!("[i18n] Failed to update tray menu: {}", e);
+                        }
+
+                        // 3. 通知前端实时切换语言
+                        if let Err(e) = app.emit_all("language-changed", lang) {
+                            eprintln!("[i18n] Failed to emit language-changed: {}", e);
+                        }
+                    }
+                    "quit" => std::process::exit(0),
+                    _ => {}
+                }
+            }
+        })
         .manage(AppState {
             entries: Mutex::new(None),
         })
@@ -349,8 +477,42 @@ pub fn run() {
             health,
             refresh,
             refresh_status,
-            get_snapshot
+            get_snapshot,
+            get_language
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_appconfig_default_language_is_empty() {
+        let config = AppConfig::default();
+        assert_eq!(config.language, "");
+    }
+
+    #[test]
+    fn test_appconfig_serialization_roundtrip() {
+        let config = AppConfig { language: "zh-CN".to_string() };
+        let json = serde_json::to_string(&config).unwrap();
+        let parsed: AppConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.language, "zh-CN");
+    }
+
+    #[test]
+    fn test_appconfig_deserialize_empty_json() {
+        // config.json 不含 language 字段时应使用默认空字符串
+        let config: AppConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(config.language, "");
+    }
+
+    #[test]
+    fn test_appconfig_deserialize_unknown_fields_ignored() {
+        // 未来加入新字段时旧版本能容错
+        let config: AppConfig = serde_json::from_str(r#"{"language":"ja","theme":"dark"}"#).unwrap();
+        assert_eq!(config.language, "ja");
+    }
 }

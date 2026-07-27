@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { HttpUsageApi } from './api/http-usage-api';
 import type { Snapshot, Source, ReportType, UsageApi, RefreshStatus, PricingMap, ModelPricing } from './api/types';
 import { ContributionCalendar } from './components/contribution-calendar';
@@ -29,6 +29,9 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { useTranslation } from './i18n/context';
+import { makeRange, dayCount } from '@/lib/selection';
+import type { Selection } from '@/lib/selection';
 
 let tauriInvoke: ((cmd: string, args?: Record<string, unknown>) => Promise<any>) | null = null;
 
@@ -79,21 +82,6 @@ function createApi(): UsageApi {
 
 const api = createApi();
 
-const SOURCES: { value: Source; label: string }[] = [
-  { value: 'all', label: 'All Sources' },
-  { value: 'claude', label: 'Claude' },
-  { value: 'codex', label: 'Codex' },
-  { value: 'gemini', label: 'Gemini' },
-  { value: 'opencode', label: 'OpenCode' },
-];
-
-const REPORT_TABS: { key: ReportType; label: string }[] = [
-  { key: 'daily', label: 'Daily' },
-  { key: 'monthly', label: 'Monthly' },
-  { key: 'session', label: 'Sessions' },
-  { key: 'blocks', label: 'Blocks' },
-];
-
 function formatCost(n: number | undefined): string {
   if (n === undefined || n === 0) return '$0.00';
   if (n < 0.01) return `$${n.toFixed(4)}`;
@@ -104,8 +92,9 @@ function formatCost(n: number | undefined): string {
 function estimateCost(
   inputTokens: number,
   outputTokens: number,
+  reasoningTokens: number,
   cacheReadTokens: number,
-  modelBreakdown: Array<{ model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number }> | undefined,
+  modelBreakdown: Array<{ model: string; inputTokens: number; outputTokens: number; reasoningTokens: number; cacheReadTokens: number }> | undefined,
   pricing: PricingMap | null
 ): { cost: number; matched: boolean } {
   const defaultPricing: ModelPricing = { input: 3e-6, output: 15e-6, cacheCreate: 3.75e-6, cacheRead: 0.3e-6 };
@@ -129,7 +118,7 @@ function estimateCost(
       if (matched) anyMatched = true;
       return total
         + item.inputTokens * p.input
-        + item.outputTokens * p.output
+        + (item.outputTokens + item.reasoningTokens) * p.output
         + item.cacheReadTokens * p.cacheRead;
     }, 0);
     return { cost, matched: anyMatched };
@@ -137,7 +126,7 @@ function estimateCost(
 
   const p = defaultPricing;
   return {
-    cost: inputTokens * p.input + outputTokens * p.output + cacheReadTokens * p.cacheRead,
+    cost: inputTokens * p.input + (outputTokens + reasoningTokens) * p.output + cacheReadTokens * p.cacheRead,
     matched: false
   };
 }
@@ -145,10 +134,13 @@ function estimateCost(
 function SourceCombobox({
   value,
   onValueChange,
+  sources,
 }: {
   value: Source;
   onValueChange: (v: Source) => void;
+  sources: { value: Source; label: string }[];
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
 
   return (
@@ -157,16 +149,16 @@ function SourceCombobox({
         className="inline-flex items-center justify-between rounded-md border bg-background px-3 py-2 text-sm hover:bg-muted"
         onClick={() => setOpen(!open)}
       >
-        {SOURCES.find((s) => s.value === value)?.label ?? 'Select source'}
+        {sources.find((s) => s.value === value)?.label ?? t('source.placeholder')}
         <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
       </PopoverTrigger>
       <PopoverContent className="w-[180px] p-0">
         <Command>
-          <CommandInput placeholder="Search source..." />
+          <CommandInput placeholder={t('source.search')} />
           <CommandList>
-            <CommandEmpty>No source found.</CommandEmpty>
+            <CommandEmpty>{t('source.notFound')}</CommandEmpty>
             <CommandGroup>
-              {SOURCES.map((s) => (
+              {sources.map((s) => (
                 <CommandItem
                   key={s.value}
                   value={s.value}
@@ -222,6 +214,7 @@ function MetricCard({
 }
 
 function App() {
+  const { t } = useTranslation();
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [pricing, setPricing] = useState<PricingMap | null>(null);
   const [loading, setLoading] = useState(false);
@@ -231,9 +224,34 @@ function App() {
   const [tab, setTab] = useState<ReportType>('daily');
   const [view, setView] = useState<'table' | 'chart'>('table');
   const [segmentMode, setSegmentMode] = useState<'token-type' | 'agent-source'>('token-type');
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selection, setSelection] = useState<Selection>({ type: 'none' });
   const hasRefreshed = useRef(false);
   const pollIntervalRef = useRef<number | null>(null);
+
+  const handleDayClick = useCallback((date: string) => {
+    setSelection((prev) => {
+      if (prev.type === 'none' || prev.type === 'range') {
+        return { type: 'pending', start: date };
+      }
+      // pending → confirm range (auto-sorted)
+      return makeRange(prev.start, date);
+    });
+  }, []);
+
+  const SOURCES: { value: Source; label: string }[] = [
+    { value: 'all', label: t('source.all') },
+    { value: 'claude', label: 'Claude' },
+    { value: 'codex', label: 'Codex' },
+    { value: 'gemini', label: 'Gemini' },
+    { value: 'opencode', label: 'OpenCode' },
+  ];
+
+  const REPORT_TABS: { key: ReportType; label: string }[] = [
+    { key: 'daily', label: t('tab.daily') },
+    { key: 'monthly', label: t('tab.monthly') },
+    { key: 'session', label: t('tab.session') },
+    { key: 'blocks', label: t('tab.blocks') },
+  ];
 
   const loadSnapshot = useCallback(async () => {
     try {
@@ -310,30 +328,69 @@ function App() {
   const sessionData = snapshot?.session?.[`${sourceKey}_session`];
   const blocksData = snapshot?.blocks?.[`${sourceKey}_blocks`];
 
-  // Today's date in YYYY-MM-DD (local timezone, e.g. "2026-06-09")
   const today = new Date().toLocaleDateString('en-CA');
 
-  // Always derived from the Daily report regardless of selected tab
   const allDailyData = snapshot?.daily?.[`${sourceKey}_daily`];
   const dailyTotals = allDailyData?.totals;
 
-  // Active row: selected day (when user clicked mosaic) or today by default
-  const activeRow = allDailyData?.days.find(
-    (d) => d.date === (selectedDate ?? today)
-  );
+  const { activeTotals, activeModelBreakdown } = useMemo(() => {
+    if (selection.type === 'range') {
+      const inRange = allDailyData?.days.filter(
+        (d) => d.date >= selection.start && d.date <= selection.end,
+      ) ?? [];
 
-  const activeTotals = {
-    totalTokens: activeRow?.totalTokens ?? 0,
-    inputTokens: activeRow?.inputTokens ?? 0,
-    cacheReadTokens: activeRow?.cacheReadTokens ?? 0,
-    outputTokens: activeRow?.outputTokens ?? 0,
-  };
+      const totals = {
+        totalTokens: inRange.reduce((s, r) => s + (r.totalTokens ?? 0), 0),
+        inputTokens: inRange.reduce((s, r) => s + (r.inputTokens ?? 0), 0),
+        cacheReadTokens: inRange.reduce((s, r) => s + (r.cacheReadTokens ?? 0), 0),
+        outputTokens: inRange.reduce((s, r) => s + (r.outputTokens ?? 0), 0),
+        reasoningTokens: inRange.reduce((s, r) => s + (r.reasoningTokens ?? 0), 0),
+      };
 
-  // Aggregate all-days model breakdown for the historical Est. Cost
+      const breakdown: Array<{
+        model: string;
+        inputTokens: number;
+        outputTokens: number;
+        reasoningTokens: number;
+        cacheReadTokens: number;
+      }> = [];
+      for (const row of inRange) {
+        for (const item of row.modelBreakdown ?? []) {
+          const existing = breakdown.find((a) => a.model === item.model);
+          if (existing) {
+            existing.inputTokens += item.inputTokens;
+            existing.outputTokens += item.outputTokens;
+            existing.reasoningTokens += item.reasoningTokens;
+            existing.cacheReadTokens += item.cacheReadTokens;
+          } else {
+            breakdown.push({ ...item });
+          }
+        }
+      }
+
+      return { activeTotals: totals, activeModelBreakdown: breakdown };
+    }
+
+    // pending or none: use single day
+    const activeDate = selection.type === 'pending' ? selection.start : today;
+    const row = allDailyData?.days.find((d) => d.date === activeDate);
+    return {
+      activeTotals: {
+        totalTokens: row?.totalTokens ?? 0,
+        inputTokens: row?.inputTokens ?? 0,
+        cacheReadTokens: row?.cacheReadTokens ?? 0,
+        outputTokens: row?.outputTokens ?? 0,
+        reasoningTokens: row?.reasoningTokens ?? 0,
+      },
+      activeModelBreakdown: row?.modelBreakdown ?? [],
+    };
+  }, [selection, allDailyData, today]);
+
   const allDailyAggregatedBreakdown: Array<{
     model: string;
     inputTokens: number;
     outputTokens: number;
+    reasoningTokens: number;
     cacheReadTokens: number;
   }> = [];
   for (const row of allDailyData?.days ?? []) {
@@ -343,19 +400,20 @@ function App() {
       if (existing) {
         existing.inputTokens += item.inputTokens;
         existing.outputTokens += item.outputTokens;
+        existing.reasoningTokens += item.reasoningTokens;
         existing.cacheReadTokens += item.cacheReadTokens;
       } else {
         allDailyAggregatedBreakdown.push({
           model: item.model,
           inputTokens: item.inputTokens,
           outputTokens: item.outputTokens,
+          reasoningTokens: item.reasoningTokens,
           cacheReadTokens: item.cacheReadTokens,
         });
       }
     }
   }
 
-  // Cache hit rate for active day (shown in the Cache Hit tooltip)
   const cacheHitRate =
     activeTotals.totalTokens > 0
       ? ((activeTotals.cacheReadTokens / activeTotals.totalTokens) * 100).toFixed(1)
@@ -367,7 +425,7 @@ function App() {
         <TooltipTrigger className="text-muted-foreground/60 hover:text-muted-foreground cursor-default">
           <Info className="h-3.5 w-3.5" />
         </TooltipTrigger>
-        <TooltipContent>Cache hit rate: {cacheHitRate}%</TooltipContent>
+        <TooltipContent>{t('tooltip.cacheHit', { rate: cacheHitRate })}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );
@@ -378,8 +436,7 @@ function App() {
     : tab === 'session' ? sessionData?.sessions ?? []
     : blocksData?.blocks ?? [];
 
-  // Aggregate modelBreakdown from all rows since totals doesn't have it
-  const aggregatedModelBreakdown: Array<{ model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number }> = [];
+  const aggregatedModelBreakdown: Array<{ model: string; inputTokens: number; outputTokens: number; reasoningTokens: number; cacheReadTokens: number }> = [];
   for (const row of tableData) {
     const breakdown = 'modelBreakdown' in row ? row.modelBreakdown : undefined;
     if (!breakdown) continue;
@@ -388,12 +445,14 @@ function App() {
       if (existing) {
         existing.inputTokens += item.inputTokens;
         existing.outputTokens += item.outputTokens;
+        existing.reasoningTokens += item.reasoningTokens;
         existing.cacheReadTokens += item.cacheReadTokens;
       } else {
         aggregatedModelBreakdown.push({
           model: item.model,
           inputTokens: item.inputTokens,
           outputTokens: item.outputTokens,
+          reasoningTokens: item.reasoningTokens,
           cacheReadTokens: item.cacheReadTokens,
         });
       }
@@ -405,20 +464,22 @@ function App() {
       ? { all: snapshot?.daily?.['all_daily'] }
       : { [`${source}_daily`]: snapshot?.daily?.[`${source}_daily`] };
 
+  const currentTabLabel = REPORT_TABS.find((r) => r.key === tab)?.label ?? tab;
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b px-4 sm:px-6 py-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <h1 className="text-2xl font-semibold">LLM Usage Dashboard</h1>
+          <h1 className="text-2xl font-semibold">{t('app.title')}</h1>
           <div className="flex items-center gap-4">
             {snapshot?.lastSuccess && (
               <span className="text-sm text-muted-foreground hidden sm:inline">
-                Updated: {new Date(snapshot.lastSuccess).toLocaleString()}
+                {t('header.updated')}{new Date(snapshot.lastSuccess).toLocaleString()}
               </span>
             )}
             <Button onClick={handleRefresh} disabled={loading} size="sm">
               <RefreshCw className={cn('mr-2 h-4 w-4', loading && 'animate-spin')} />
-              {loading ? 'Refreshing...' : 'Refresh'}
+              {loading ? t('btn.refreshing') : t('btn.refresh')}
             </Button>
           </div>
         </div>
@@ -431,23 +492,23 @@ function App() {
 
         {loading && refreshStatus?.isRefreshing && (
           <div className="mt-2 rounded-md bg-blue-500/10 p-3 text-sm text-blue-500">
-            Refreshing data in background...
+            {t('status.refreshing')}
           </div>
         )}
       </header>
 
       <main className="px-4 sm:px-6 py-6 space-y-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-          <SourceCombobox value={source} onValueChange={setSource} />
+          <SourceCombobox value={source} onValueChange={setSource} sources={SOURCES} />
 
           <Tabs
             value={tab}
             onValueChange={(v) => setTab(v as ReportType)}
           >
             <TabsList>
-              {REPORT_TABS.map((t) => (
-                <TabsTrigger key={t.key} value={t.key}>
-                  {t.label}
+              {REPORT_TABS.map((r) => (
+                <TabsTrigger key={r.key} value={r.key}>
+                  {r.label}
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -463,7 +524,7 @@ function App() {
                   className="h-7 px-2 text-xs"
                 >
                   <Layers className="h-3 w-3 mr-1" />
-                  Token Type
+                  {t('chart.tokenType')}
                 </Button>
                 <Button
                   variant={segmentMode === 'agent-source' ? 'default' : 'ghost'}
@@ -473,7 +534,7 @@ function App() {
                   disabled={source !== 'all'}
                 >
                   <Users className="h-3 w-3 mr-1" />
-                  Agent Source
+                  {t('chart.agentSource')}
                 </Button>
               </div>
             )}
@@ -498,44 +559,57 @@ function App() {
 
         {(activeTotals || dailyTotals) && (
           <div className="space-y-2">
-            {selectedDate && (
+            {selection.type !== 'none' && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <span>Viewing {selectedDate}</span>
+                <span>
+                  {selection.type === 'pending'
+                    ? t('mosaic.viewing', { date: selection.start })
+                    : t('mosaic.range', {
+                        start: selection.start,
+                        end: selection.end,
+                        days: dayCount(selection.start, selection.end),
+                      })}
+                </span>
                 <button
-                  onClick={() => setSelectedDate(null)}
+                  onClick={() => setSelection({ type: 'none' })}
                   className="rounded-sm opacity-70 hover:opacity-100"
-                  aria-label="Back to today"
+                  aria-label={t('btn.backToday')}
                 >
                   ×
                 </button>
               </div>
             )}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-6 gap-4">
               <MetricCard
-                title="Total Tokens"
+                title={t('metric.totalTokens')}
                 value={activeTotals.totalTokens}
                 total={dailyTotals?.totalTokens}
               />
               <MetricCard
-                title="Input"
+                title={t('metric.input')}
                 value={activeTotals.inputTokens}
                 total={dailyTotals?.inputTokens}
               />
               <MetricCard
-                title="Cache Hit"
+                title={t('metric.cacheHit')}
                 value={activeTotals.cacheReadTokens}
                 total={dailyTotals?.cacheReadTokens}
                 tooltip={cacheHitTooltip}
               />
               <MetricCard
-                title="Output"
+                title={t('metric.output')}
                 value={activeTotals.outputTokens}
                 total={dailyTotals?.outputTokens}
+              />
+              <MetricCard
+                title={t('metric.reasoning')}
+                value={activeTotals.reasoningTokens}
+                total={dailyTotals?.reasoningTokens}
               />
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Est. Cost
+                    {t('metric.cost')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -543,13 +617,15 @@ function App() {
                     const activeCost = estimateCost(
                       activeTotals.inputTokens,
                       activeTotals.outputTokens,
+                      activeTotals.reasoningTokens,
                       activeTotals.cacheReadTokens,
-                      activeRow?.modelBreakdown ?? [],
+                      activeModelBreakdown,
                       pricing
                     );
                     const totalCost = estimateCost(
                       dailyTotals?.inputTokens ?? 0,
                       dailyTotals?.outputTokens ?? 0,
+                      dailyTotals?.reasoningTokens ?? 0,
                       dailyTotals?.cacheReadTokens ?? 0,
                       allDailyAggregatedBreakdown,
                       pricing
@@ -559,7 +635,7 @@ function App() {
                         <div className="text-2xl font-bold">
                           {formatCost(activeCost.cost)}
                           {!activeCost.matched && pricing && (
-                            <span className="text-xs text-muted-foreground ml-2">(default)</span>
+                            <span className="text-xs text-muted-foreground ml-2">{t('metric.costDefault')}</span>
                           )}
                         </div>
                         <div className="text-xs text-muted-foreground mt-0.5">
@@ -576,12 +652,13 @@ function App() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Usage Mosaic</CardTitle>
+            <CardTitle>{t('mosaic.title')}</CardTitle>
           </CardHeader>
           <CardContent>
             <ContributionCalendar
               data={calendarData as any}
-              onDayClick={setSelectedDate}
+              selection={selection}
+              onDayClick={handleDayClick}
               pricing={pricing}
             />
           </CardContent>
@@ -590,7 +667,7 @@ function App() {
         <Card>
           <CardHeader>
             <CardTitle>
-              {REPORT_TABS.find((t) => t.key === tab)?.label} Report
+              {t('report.title', { tab: currentTabLabel })}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -610,7 +687,7 @@ function App() {
 
         {snapshot?.status === 'nodata' && !loading && (
           <div className="text-center py-12 text-muted-foreground">
-            No data available. Click Refresh to fetch usage data.
+            {t('status.noData')}
           </div>
         )}
       </main>

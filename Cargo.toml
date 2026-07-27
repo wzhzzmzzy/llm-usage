@@ -2,7 +2,7 @@
 members = [".", "src-tauri"]
 
 [workspace.package]
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 
 [package]
@@ -60,6 +60,9 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 
 # Async trait
 async-trait = "0.1"
+
+# Data parallelism for per-file parsing
+rayon = "1"
 
 # Logging
 tracing = "0.1"

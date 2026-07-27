@@ -17,6 +17,8 @@ pub struct UsageEntry {
     pub model: Option<String>,
     pub input_tokens: u64,
     pub output_tokens: u64,
+    /// Reasoning/thinking tokens (billed at the output rate by providers)
+    pub reasoning_tokens: u64,
     pub cache_creation_tokens: u64,
     pub cache_read_tokens: u64,
     pub total_tokens: u64,
@@ -31,6 +33,7 @@ pub struct ModelBreakdown {
     pub input_tokens: u64,
     pub cache_read_tokens: u64,
     pub output_tokens: u64,
+    pub reasoning_tokens: u64,
     pub total_tokens: u64,
     pub request_count: u64,
 }
@@ -68,6 +71,7 @@ pub struct DailyAggregate {
     pub input_tokens: u64,
     pub cache_read_tokens: u64,
     pub output_tokens: u64,
+    pub reasoning_tokens: u64,
     pub request_count: u64,
     pub models_used: Vec<String>,
     pub model_breakdown: Vec<ModelBreakdown>,
@@ -82,6 +86,7 @@ pub struct MonthlyAggregate {
     pub input_tokens: u64,
     pub cache_read_tokens: u64,
     pub output_tokens: u64,
+    pub reasoning_tokens: u64,
     pub request_count: u64,
     pub models_used: Vec<String>,
     pub model_breakdown: Vec<ModelBreakdown>,
@@ -97,6 +102,7 @@ pub struct SessionAggregate {
     pub input_tokens: u64,
     pub cache_read_tokens: u64,
     pub output_tokens: u64,
+    pub reasoning_tokens: u64,
     pub request_count: u64,
     pub last_activity: Option<String>,
     pub models_used: Vec<String>,
@@ -116,6 +122,7 @@ pub struct BlockAggregate {
     pub input_tokens: u64,
     pub cache_read_tokens: u64,
     pub output_tokens: u64,
+    pub reasoning_tokens: u64,
     pub request_count: u64,
     pub models_used: Vec<String>,
     pub model_breakdown: Vec<ModelBreakdown>,
@@ -137,6 +144,7 @@ pub fn build_model_breakdown(entries: &[UsageEntry]) -> Vec<ModelBreakdown> {
             input_tokens: 0,
             cache_read_tokens: 0,
             output_tokens: 0,
+            reasoning_tokens: 0,
             total_tokens: 0,
             request_count: 0,
         });
@@ -144,6 +152,7 @@ pub fn build_model_breakdown(entries: &[UsageEntry]) -> Vec<ModelBreakdown> {
         breakdown.input_tokens += entry.input_tokens;
         breakdown.cache_read_tokens += entry.cache_read_tokens;
         breakdown.output_tokens += entry.output_tokens;
+        breakdown.reasoning_tokens += entry.reasoning_tokens;
         breakdown.total_tokens += entry.total_tokens;
         breakdown.request_count += 1;
     }
@@ -242,6 +251,7 @@ fn create_block(
     let input_tokens: u64 = entries.iter().map(|e| e.input_tokens).sum();
     let cache_read_tokens: u64 = entries.iter().map(|e| e.cache_read_tokens).sum();
     let output_tokens: u64 = entries.iter().map(|e| e.output_tokens).sum();
+    let reasoning_tokens: u64 = entries.iter().map(|e| e.reasoning_tokens).sum();
 
     let mut models_used: Vec<String> = entries
         .iter()
@@ -265,6 +275,7 @@ fn create_block(
         input_tokens,
         cache_read_tokens,
         output_tokens,
+        reasoning_tokens,
         request_count: entries.len() as u64,
         models_used,
         model_breakdown,

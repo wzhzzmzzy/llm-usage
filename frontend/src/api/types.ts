@@ -9,6 +9,7 @@ export interface ModelBreakdown {
   inputTokens: number;
   cacheReadTokens: number;
   outputTokens: number;
+  reasoningTokens: number;
   totalTokens: number;
   requestCount: number;
 }
@@ -18,6 +19,7 @@ export interface UsageMetric {
   inputTokens: number;
   cacheReadTokens: number;
   outputTokens: number;
+  reasoningTokens: number;
   requestCount?: number;
   modelBreakdown?: ModelBreakdown[];
 }
@@ -28,6 +30,7 @@ export interface DailyRow {
   inputTokens: number;
   cacheReadTokens: number;
   outputTokens: number;
+  reasoningTokens: number;
   requestCount?: number;
   modelsUsed?: string[];
   modelBreakdown?: ModelBreakdown[];
@@ -39,6 +42,7 @@ export interface MonthlyRow {
   inputTokens: number;
   cacheReadTokens: number;
   outputTokens: number;
+  reasoningTokens: number;
   requestCount?: number;
   modelsUsed?: string[];
   modelBreakdown?: ModelBreakdown[];
@@ -51,6 +55,7 @@ export interface SessionRow {
   inputTokens: number;
   cacheReadTokens: number;
   outputTokens: number;
+  reasoningTokens: number;
   requestCount: number;
   lastActivity?: string;
   modelsUsed?: string[];
@@ -65,6 +70,7 @@ export interface BlockRow {
   inputTokens: number;
   cacheReadTokens: number;
   outputTokens: number;
+  reasoningTokens: number;
   isActive: boolean;
   modelsUsed?: string[];
 }

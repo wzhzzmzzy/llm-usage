@@ -8,6 +8,7 @@ const mockDailyRows: DailyRow[] = [
     inputTokens: 100000,
     cacheReadTokens: 20000,
     outputTokens: 30000,
+    reasoningTokens: 0,
     requestCount: 10,
     modelsUsed: ['gpt-5.5', 'claude-sonnet-4'],
     modelBreakdown: [
@@ -16,6 +17,7 @@ const mockDailyRows: DailyRow[] = [
         inputTokens: 60000,
         cacheReadTokens: 15000,
         outputTokens: 20000,
+        reasoningTokens: 0,
         totalTokens: 95000,
         requestCount: 6,
       },
@@ -24,6 +26,7 @@ const mockDailyRows: DailyRow[] = [
         inputTokens: 40000,
         cacheReadTokens: 5000,
         outputTokens: 10000,
+        reasoningTokens: 0,
         totalTokens: 55000,
         requestCount: 4,
       },
@@ -35,6 +38,7 @@ const mockDailyRows: DailyRow[] = [
     inputTokens: 50000,
     cacheReadTokens: 10000,
     outputTokens: 20000,
+    reasoningTokens: 0,
     requestCount: 5,
     modelsUsed: ['gpt-5.5'],
   },
@@ -47,6 +51,7 @@ const mockMonthlyRows: MonthlyRow[] = [
     inputTokens: 300000,
     cacheReadTokens: 50000,
     outputTokens: 150000,
+    reasoningTokens: 0,
     requestCount: 50,
     modelsUsed: ['gpt-5.5', 'claude-sonnet-4'],
     modelBreakdown: [
@@ -55,6 +60,7 @@ const mockMonthlyRows: MonthlyRow[] = [
         inputTokens: 200000,
         cacheReadTokens: 30000,
         outputTokens: 100000,
+        reasoningTokens: 0,
         totalTokens: 330000,
         requestCount: 30,
       },
@@ -63,6 +69,7 @@ const mockMonthlyRows: MonthlyRow[] = [
         inputTokens: 100000,
         cacheReadTokens: 20000,
         outputTokens: 50000,
+        reasoningTokens: 0,
         totalTokens: 170000,
         requestCount: 20,
       },
@@ -78,6 +85,7 @@ const mockSessionRows: SessionRow[] = [
     inputTokens: 25000,
     cacheReadTokens: 5000,
     outputTokens: 5000,
+    reasoningTokens: 0,
     requestCount: 3,
     lastActivity: '2026-05-29T10:00:00Z',
     modelsUsed: ['gpt-5.5'],
@@ -87,6 +95,7 @@ const mockSessionRows: SessionRow[] = [
         inputTokens: 25000,
         cacheReadTokens: 5000,
         outputTokens: 5000,
+        reasoningTokens: 0,
         totalTokens: 35000,
         requestCount: 3,
       },
@@ -173,14 +182,16 @@ describe('ModelBreakdown types', () => {
       inputTokens: 1000,
       cacheReadTokens: 200,
       outputTokens: 300,
-      totalTokens: 1500,
+      reasoningTokens: 50,
+      totalTokens: 1550,
       requestCount: 5,
     };
     expect(breakdown.model).toBe('gpt-5.5');
     expect(breakdown.inputTokens).toBe(1000);
     expect(breakdown.cacheReadTokens).toBe(200);
     expect(breakdown.outputTokens).toBe(300);
-    expect(breakdown.totalTokens).toBe(1500);
+    expect(breakdown.reasoningTokens).toBe(50);
+    expect(breakdown.totalTokens).toBe(1550);
     expect(breakdown.requestCount).toBe(5);
   });
 
@@ -190,12 +201,13 @@ describe('ModelBreakdown types', () => {
       inputTokens: 1000,
       cacheReadTokens: 200,
       outputTokens: 300,
-      totalTokens: 1500,
+      reasoningTokens: 50,
+      totalTokens: 1550,
       requestCount: 5,
     };
-    // totalTokens should equal inputTokens + cacheReadTokens + outputTokens
+    // totalTokens covers inputTokens + cacheReadTokens + outputTokens + reasoningTokens
     expect(breakdown.totalTokens).toBe(
-      breakdown.inputTokens + breakdown.cacheReadTokens + breakdown.outputTokens
+      breakdown.inputTokens + breakdown.cacheReadTokens + breakdown.outputTokens + breakdown.reasoningTokens
     );
   });
 });

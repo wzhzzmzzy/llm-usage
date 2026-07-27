@@ -16,6 +16,7 @@ pub fn calculate_cost(
     model: Option<&str>,
     input_tokens: u64,
     output_tokens: u64,
+    reasoning_tokens: u64,
     cache_creation_tokens: u64,
     cache_read_tokens: u64,
     cost_usd: Option<f64>,
@@ -30,6 +31,7 @@ pub fn calculate_cost(
                     model,
                     input_tokens,
                     output_tokens,
+                    reasoning_tokens,
                     cache_creation_tokens,
                     cache_read_tokens,
                     pricing,
@@ -40,6 +42,7 @@ pub fn calculate_cost(
             model,
             input_tokens,
             output_tokens,
+            reasoning_tokens,
             cache_creation_tokens,
             cache_read_tokens,
             pricing,
@@ -52,6 +55,7 @@ fn calculate_cost_from_tokens(
     _model: Option<&str>,
     input_tokens: u64,
     output_tokens: u64,
+    reasoning_tokens: u64,
     cache_creation_tokens: u64,
     cache_read_tokens: u64,
     pricing: Option<&Pricing>,
@@ -59,9 +63,13 @@ fn calculate_cost_from_tokens(
     let Some(pricing) = pricing else {
         return 0.0;
     };
-    
+
     tiered_cost(input_tokens, pricing.input, pricing.input_above_200k)
-        + tiered_cost(output_tokens, pricing.output, pricing.output_above_200k)
+        + tiered_cost(
+            output_tokens + reasoning_tokens,
+            pricing.output,
+            pricing.output_above_200k,
+        )
         + tiered_cost(
             cache_creation_tokens,
             pricing.cache_create,
@@ -98,6 +106,7 @@ mod tests {
             Some("test"),
             100,
             200,
+            50,
             0,
             0,
             Some(0.05),
@@ -113,6 +122,7 @@ mod tests {
             Some("test"),
             100,
             200,
+            50,
             0,
             0,
             None,
@@ -139,15 +149,16 @@ mod tests {
             Some("test"),
             1000,
             2000,
+            500,
             100,
             50,
             Some(0.05), // Should be ignored in Calculate mode
             CostMode::Calculate,
             Some(&pricing),
         );
-        
-        // 1000 * 1e-6 + 2000 * 2e-6 + 100 * 1.25e-6 + 50 * 0.1e-6
-        assert_eq!(cost, 0.001 + 0.004 + 0.000125 + 0.000005);
+
+        // 1000 * 1e-6 + (2000 + 500) * 2e-6 + 100 * 1.25e-6 + 50 * 0.1e-6
+        assert_eq!(cost, 0.001 + 0.005 + 0.000125 + 0.000005);
     }
 
     #[test]

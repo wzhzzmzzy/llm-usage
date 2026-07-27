@@ -91,6 +91,7 @@ pub struct UsageMetric {
     pub input_tokens: u64,
     pub cache_read_tokens: u64,
     pub output_tokens: u64,
+    pub reasoning_tokens: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_count: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -106,6 +107,7 @@ pub struct DailyRow {
     pub input_tokens: u64,
     pub cache_read_tokens: u64,
     pub output_tokens: u64,
+    pub reasoning_tokens: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_count: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -123,6 +125,7 @@ pub struct MonthlyRow {
     pub input_tokens: u64,
     pub cache_read_tokens: u64,
     pub output_tokens: u64,
+    pub reasoning_tokens: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_count: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -141,6 +144,7 @@ pub struct SessionRow {
     pub input_tokens: u64,
     pub cache_read_tokens: u64,
     pub output_tokens: u64,
+    pub reasoning_tokens: u64,
     pub request_count: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_activity: Option<DateTime<Utc>>,
@@ -161,6 +165,7 @@ pub struct BlockRow {
     pub input_tokens: u64,
     pub cache_read_tokens: u64,
     pub output_tokens: u64,
+    pub reasoning_tokens: u64,
     pub is_active: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub models_used: Option<Vec<String>>,
