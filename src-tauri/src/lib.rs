@@ -3,8 +3,10 @@ use llm_usage::core::adapter::codex::CodexAdapter;
 use llm_usage::core::adapter::gemini::GeminiAdapter;
 use llm_usage::core::adapter::opencode::OpenCodeAdapter;
 use llm_usage::core::adapter::*;
+use llm_usage::core::cost::apply_costs;
 use llm_usage::core::model::*;
 use llm_usage::core::normalize::*;
+use llm_usage::core::pricing::{PricingCache, PricingMap};
 use serde::Deserialize;
 use serde::Serialize;
 use std::fs;
@@ -113,7 +115,7 @@ struct RefreshStatus {
     snapshot_status: String,
 }
 
-fn load_all_entries() -> Vec<(Source, Vec<UsageEntry>)> {
+fn load_all_entries(pricing: &PricingMap) -> Vec<(Source, Vec<UsageEntry>)> {
     use rayon::prelude::*;
 
     let adapters: Vec<Box<dyn UsageAdapter>> = vec![
@@ -132,6 +134,8 @@ fn load_all_entries() -> Vec<(Source, Vec<UsageEntry>)> {
             if entries.is_empty() {
                 None
             } else {
+                let mut entries = entries;
+                apply_costs(&mut entries, pricing);
                 Some((source, entries))
             }
         })
@@ -264,7 +268,11 @@ fn get_snapshot(state: tauri::State<'_, AppState>) -> Snapshot {
 }
 
 async fn perform_refresh(app: &tauri::AppHandle) -> Result<RefreshStatus, String> {
-    let entries = tauri::async_runtime::spawn_blocking(load_all_entries)
+    let pricing = match PricingCache::new() {
+        Ok(cache) => cache.full_snapshot().await,
+        Err(_) => PricingMap::default(),
+    };
+    let entries = tauri::async_runtime::spawn_blocking(move || load_all_entries(&pricing))
         .await
         .map_err(|e| e.to_string())?;
 
@@ -332,6 +340,14 @@ fn refresh_status(state: tauri::State<'_, AppState>) -> RefreshStatus {
 #[tauri::command]
 fn get_language() -> String {
     load_config().language
+}
+
+#[tauri::command]
+async fn get_pricing() -> serde_json::Value {
+    match PricingCache::new() {
+        Ok(cache) => cache.full_snapshot().await.to_json(),
+        Err(_) => serde_json::json!({}),
+    }
 }
 
 const LANG_OPTIONS: &[(&str, &str)] = &[
@@ -453,7 +469,8 @@ pub fn run() {
             refresh,
             refresh_status,
             get_snapshot,
-            get_language
+            get_language,
+            get_pricing
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -516,8 +533,12 @@ mod tests {
             output_tokens: 0,
             reasoning_tokens: 0,
             cache_creation_tokens: 0,
+            cache_creation_1h_tokens: 0,
             cache_read_tokens: 0,
             total_tokens,
+            cost_usd: None,
+            is_fast: false,
+            cost: 0.0,
             project_path: None,
         }
     }

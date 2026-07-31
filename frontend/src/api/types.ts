@@ -7,11 +7,13 @@ export type HealthStatus = 'healthy' | 'degraded' | 'unhealthy';
 export interface ModelBreakdown {
   model: string;
   inputTokens: number;
+  cacheCreationTokens?: number;
   cacheReadTokens: number;
   outputTokens: number;
   reasoningTokens: number;
   totalTokens: number;
   requestCount: number;
+  cost?: number;
 }
 
 export interface UsageMetric {

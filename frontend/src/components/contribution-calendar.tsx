@@ -1,5 +1,6 @@
 import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import type { DailyReport, PricingMap, ModelBreakdown } from '../api/types';
+import { sumBackendCost } from './utils';
 import { useTranslation } from '@/i18n/context';
 import { LANG_TO_LOCALE } from '@/i18n/index';
 import { getCellHighlight } from '@/lib/selection';
@@ -63,6 +64,8 @@ function fmtCost(n: number): string {
 }
 
 function estimateDayCost(day: DayData, pricing: PricingMap | null | undefined): number {
+  const backendCost = sumBackendCost(day.modelBreakdown);
+  if (backendCost !== null) return backendCost;
   if (day.modelBreakdown && day.modelBreakdown.length > 0) {
     return day.modelBreakdown.reduce((total, mb) => {
       const p = findModelPricing(mb.model, pricing);

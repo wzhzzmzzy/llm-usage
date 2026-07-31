@@ -19,6 +19,8 @@ pub struct Pricing {
     pub output: f64,
     pub cache_create: f64,
     pub cache_read: f64,
+    /// Cost multiplier applied to speed=fast requests (ccusage parity)
+    pub fast_multiplier: f64,
     pub input_above_200k: Option<f64>,
     pub output_above_200k: Option<f64>,
     pub cache_create_above_200k: Option<f64>,
@@ -28,7 +30,7 @@ pub struct Pricing {
 /// Map of model name to pricing information
 #[derive(Debug, Clone, Default)]
 pub struct PricingMap {
-    entries: HashMap<String, Pricing>,
+    pub(crate) entries: HashMap<String, Pricing>,
     context_limits: HashMap<String, u64>,
 }
 
@@ -100,6 +102,16 @@ impl PricingCache {
 
     pub fn get_snapshot_sync(&self) -> PricingMap {
         self.snapshot.read().unwrap().clone()
+    }
+
+    /// Snapshot merged with the builtin table and fast-multiplier overrides;
+    /// the single source for cost calculation and the /api/pricing endpoint.
+    pub async fn full_snapshot(&self) -> PricingMap {
+        self.ensure_loaded().await;
+        let mut map = self.get_snapshot_sync();
+        map.put_builtin_pricing();
+        map.apply_fast_multiplier_overrides();
+        map
     }
 
     fn sync_snapshot(&self, pricing: &PricingMap) {
@@ -236,6 +248,7 @@ impl PricingMap {
                     output,
                     cache_create,
                     cache_read,
+                    fast_multiplier: 1.0,
                     input_above_200k: None,
                     output_above_200k: None,
                     cache_create_above_200k: None,
@@ -267,6 +280,35 @@ impl PricingMap {
                 })
                 .map(|(_, pricing)| *pricing)
         })
+    }
+
+    /// Applies ccusage's fast-multiplier-overrides.json to entries loaded from
+    /// sources (like OpenRouter) that carry no fast-tier data.
+    pub fn apply_fast_multiplier_overrides(&mut self) {
+        const EXACT: &[(&str, f64)] = &[
+            ("gpt-5.5", 2.5),
+            ("gpt-5.4", 2.0),
+            ("gpt-5.3-codex", 2.0),
+        ];
+        const PREFIX: &[(&str, f64)] = &[
+            ("claude-opus-4-6", 6.0),
+            ("claude-opus-4-7", 6.0),
+            ("claude-opus-4-8", 2.0),
+        ];
+        for (key, pricing) in self.entries.iter_mut() {
+            let bare = key.rsplit(['/', ':']).next().unwrap_or(key);
+            if let Some((_, multiplier)) = EXACT.iter().find(|(exact, _)| exact == &bare) {
+                pricing.fast_multiplier = *multiplier;
+                continue;
+            }
+            let normalized = normalized_pricing_key(key);
+            if let Some((_, multiplier)) = PREFIX
+                .iter()
+                .find(|(prefix, _)| contains_pricing_key(normalized.as_ref(), prefix))
+            {
+                pricing.fast_multiplier = *multiplier;
+            }
+        }
     }
 
     pub fn is_loaded(&self) -> bool {
@@ -313,12 +355,31 @@ impl PricingMap {
                 output: 75e-6,
                 cache_create: 18.75e-6,
                 cache_read: 1.5e-6,
+                fast_multiplier: 1.0,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
                 cache_read_above_200k: None,
             },
         );
+        // Versioned opus entries carry ccusage's per-version fast multipliers;
+        // fuzzy longest-key matching resolves claude-opus-4-x logs to them.
+        for (version, fast_multiplier) in [("4-6", 6.0), ("4-7", 6.0), ("4-8", 2.0)] {
+            self.entries.insert(
+                format!("claude-opus-{version}"),
+                Pricing {
+                    input: 15e-6,
+                    output: 75e-6,
+                    cache_create: 18.75e-6,
+                    cache_read: 1.5e-6,
+                    fast_multiplier,
+                    input_above_200k: None,
+                    output_above_200k: None,
+                    cache_create_above_200k: None,
+                    cache_read_above_200k: None,
+                },
+            );
+        }
         self.entries.insert(
             "claude-sonnet-4".to_string(),
             Pricing {
@@ -326,6 +387,7 @@ impl PricingMap {
                 output: 15e-6,
                 cache_create: 3.75e-6,
                 cache_read: 0.3e-6,
+                fast_multiplier: 1.0,
                 input_above_200k: Some(6e-6),
                 output_above_200k: Some(22.5e-6),
                 cache_create_above_200k: Some(7.5e-6),
@@ -339,6 +401,7 @@ impl PricingMap {
                 output: 4e-6,
                 cache_create: 1.0e-6,
                 cache_read: 0.08e-6,
+                fast_multiplier: 1.0,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -352,6 +415,7 @@ impl PricingMap {
                 output: 75e-6,
                 cache_create: 18.75e-6,
                 cache_read: 1.5e-6,
+                fast_multiplier: 1.0,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -365,6 +429,7 @@ impl PricingMap {
                 output: 15e-6,
                 cache_create: 3.75e-6,
                 cache_read: 0.3e-6,
+                fast_multiplier: 1.0,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -378,6 +443,7 @@ impl PricingMap {
                 output: 1.25e-6,
                 cache_create: 0.3e-6,
                 cache_read: 0.03e-6,
+                fast_multiplier: 1.0,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -393,6 +459,7 @@ impl PricingMap {
                 output: 10e-6,
                 cache_create: 1.25e-6,
                 cache_read: 0.125e-6,
+                fast_multiplier: 1.0,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -406,19 +473,7 @@ impl PricingMap {
                 output: 10e-6,
                 cache_create: 1.25e-6,
                 cache_read: 0.125e-6,
-                input_above_200k: None,
-                output_above_200k: None,
-                cache_create_above_200k: None,
-                cache_read_above_200k: None,
-            },
-        );
-        self.entries.insert(
-            "gpt-5.2".to_string(),
-            Pricing {
-                input: 1.75e-6,
-                output: 14e-6,
-                cache_create: 1.75e-6,
-                cache_read: 0.175e-6,
+                fast_multiplier: 1.0,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -428,10 +483,25 @@ impl PricingMap {
         self.entries.insert(
             "gpt-5.4".to_string(),
             Pricing {
+                input: 1.75e-6,
+                output: 14e-6,
+                cache_create: 1.75e-6,
+                cache_read: 0.175e-6,
+                fast_multiplier: 2.0,
+                input_above_200k: None,
+                output_above_200k: None,
+                cache_create_above_200k: None,
+                cache_read_above_200k: None,
+            },
+        );
+        self.entries.insert(
+            "gpt-5.5".to_string(),
+            Pricing {
                 input: 2.5e-6,
                 output: 15e-6,
                 cache_create: 2.5e-6,
                 cache_read: 0.25e-6,
+                fast_multiplier: 2.5,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -445,6 +515,7 @@ impl PricingMap {
                 output: 4.5e-6,
                 cache_create: 0.75e-6,
                 cache_read: 0.075e-6,
+                fast_multiplier: 1.0,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -458,6 +529,7 @@ impl PricingMap {
                 output: 4.5e-6,
                 cache_create: 0.75e-6,
                 cache_read: 0.075e-6,
+                fast_multiplier: 1.0,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -471,6 +543,7 @@ impl PricingMap {
                 output: 0.88e-6,
                 cache_create: 0.55e-6,
                 cache_read: 0.0036e-6,
+                fast_multiplier: 1.0,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -484,6 +557,7 @@ impl PricingMap {
                 output: 1.25e-6,
                 cache_create: 0.2e-6,
                 cache_read: 0.02e-6,
+                fast_multiplier: 1.0,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -559,6 +633,7 @@ mod tests {
                 output: 15e-6,
                 cache_create: 3.75e-6,
                 cache_read: 0.3e-6,
+                fast_multiplier: 1.0,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -572,6 +647,7 @@ mod tests {
                 output: 15e-6,
                 cache_create: 3.75e-6,
                 cache_read: 0.3e-6,
+                fast_multiplier: 1.0,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -582,5 +658,49 @@ mod tests {
         assert!(pricing.find("claude-sonnet-4-20250514").is_some());
         assert!(pricing.find("claude-sonnet-4").is_some());
         assert!(pricing.find("anthropic.claude-sonnet-4-20250514-v1:0").is_some());
+    }
+
+    #[test]
+    fn test_openrouter_loaded_entries_default_fast_multiplier_to_one() {
+        let mut pricing = PricingMap::default();
+        let json = r#"{"data":[{"id":"openai/gpt-5.4","pricing":{"prompt":"0.00000175","completion":"0.000014"}}]}"#;
+        assert_eq!(pricing.load_json(json), 1);
+        assert_eq!(pricing.find("openai/gpt-5.4").unwrap().fast_multiplier, 1.0);
+    }
+
+    #[test]
+    fn test_fast_multiplier_overrides_cover_openrouter_entries() {
+        let mut pricing = PricingMap::default();
+        let json = r#"{"data":[
+            {"id":"openai/gpt-5.4","pricing":{"prompt":"0.00000175","completion":"0.000014"}},
+            {"id":"openai/gpt-5.5","pricing":{"prompt":"0.0000025","completion":"0.000015"}},
+            {"id":"anthropic/claude-opus-4-6-20261101","pricing":{"prompt":"0.000015","completion":"0.000075"}}
+        ]}"#;
+        pricing.load_json(json);
+        pricing.apply_fast_multiplier_overrides();
+        // mirrors ccusage's fast-multiplier-overrides.json
+        assert_eq!(pricing.find("openai/gpt-5.4").unwrap().fast_multiplier, 2.0);
+        assert_eq!(pricing.find("openai/gpt-5.5").unwrap().fast_multiplier, 2.5);
+        assert_eq!(
+            pricing.find("anthropic/claude-opus-4-6-20261101").unwrap().fast_multiplier,
+            6.0
+        );
+    }
+
+    #[test]
+    fn test_builtin_pricing_fast_multipliers() {
+        let mut pricing = PricingMap::default();
+        pricing.put_builtin_pricing();
+        assert_eq!(pricing.find("gpt-5.4").unwrap().fast_multiplier, 2.0);
+        assert_eq!(pricing.find("claude-opus-4-6").unwrap().fast_multiplier, 6.0);
+        assert_eq!(pricing.find("claude-opus-4-7").unwrap().fast_multiplier, 6.0);
+        assert_eq!(pricing.find("claude-opus-4-8").unwrap().fast_multiplier, 2.0);
+        assert_eq!(pricing.find("claude-opus-4").unwrap().fast_multiplier, 1.0);
+        assert_eq!(pricing.find("claude-sonnet-4").unwrap().fast_multiplier, 1.0);
+        // versioned entries inherit the generic opus-4 rates
+        let versioned = pricing.find("claude-opus-4-6").unwrap();
+        let generic = pricing.find("claude-opus-4").unwrap();
+        assert_eq!(versioned.input, generic.input);
+        assert_eq!(versioned.output, generic.output);
     }
 }

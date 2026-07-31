@@ -19,9 +19,18 @@ pub struct UsageEntry {
     pub output_tokens: u64,
     /// Reasoning/thinking tokens (billed at the output rate by providers)
     pub reasoning_tokens: u64,
+    /// Cache creation tokens, combined 5m+1h when the source provides a breakdown
     pub cache_creation_tokens: u64,
+    /// The 1h-ephemeral portion of cache_creation_tokens (billed at 2x input rate)
+    pub cache_creation_1h_tokens: u64,
     pub cache_read_tokens: u64,
     pub total_tokens: u64,
+    /// Provider-reported cost when the log carries one (e.g. Claude's costUSD)
+    pub cost_usd: Option<f64>,
+    /// speed=fast requests bill at the model's fast multiplier
+    pub is_fast: bool,
+    /// Entry cost computed at preload time (costUSD preferred, else calculated)
+    pub cost: f64,
     pub project_path: Option<String>,
 }
 
@@ -31,11 +40,13 @@ pub struct UsageEntry {
 pub struct ModelBreakdown {
     pub model: String,
     pub input_tokens: u64,
+    pub cache_creation_tokens: u64,
     pub cache_read_tokens: u64,
     pub output_tokens: u64,
     pub reasoning_tokens: u64,
     pub total_tokens: u64,
     pub request_count: u64,
+    pub cost: f64,
 }
 
 /// Adapter trait for loading usage data from different sources
@@ -142,19 +153,23 @@ pub fn build_model_breakdown(entries: &[&UsageEntry]) -> Vec<ModelBreakdown> {
         let breakdown = map.entry(model.clone()).or_insert_with(|| ModelBreakdown {
             model,
             input_tokens: 0,
+            cache_creation_tokens: 0,
             cache_read_tokens: 0,
             output_tokens: 0,
             reasoning_tokens: 0,
             total_tokens: 0,
             request_count: 0,
+            cost: 0.0,
         });
 
         breakdown.input_tokens += entry.input_tokens;
+        breakdown.cache_creation_tokens += entry.cache_creation_tokens;
         breakdown.cache_read_tokens += entry.cache_read_tokens;
         breakdown.output_tokens += entry.output_tokens;
         breakdown.reasoning_tokens += entry.reasoning_tokens;
         breakdown.total_tokens += entry.total_tokens;
         breakdown.request_count += 1;
+        breakdown.cost += entry.cost;
     }
 
     let mut result: Vec<ModelBreakdown> = map.into_values().collect();
@@ -237,8 +252,7 @@ fn create_block(
     entries: &[&UsageEntry],
     now: DateTime<Utc>,
     block_duration: chrono::Duration,
-) -> BlockAggregate {
-    let end_time = start_time + block_duration;
+) -> BlockAggregate {    let end_time = start_time + block_duration;
     let actual_end_time = entries.last()
         .and_then(|e| DateTime::parse_from_rfc3339(&e.timestamp).ok())
         .map(|dt| dt.with_timezone(&Utc));
@@ -277,5 +291,48 @@ fn create_block(
         request_count: entries.len() as u64,
         models_used,
         model_breakdown,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(model: &str, cache_creation: u64, cost: f64) -> UsageEntry {
+        UsageEntry {
+            session_id: "s".to_string(),
+            timestamp: "2026-05-29T10:00:00.000Z".to_string(),
+            model: Some(model.to_string()),
+            input_tokens: 100,
+            output_tokens: 50,
+            reasoning_tokens: 0,
+            cache_creation_tokens: cache_creation,
+            cache_creation_1h_tokens: 0,
+            cache_read_tokens: 0,
+            total_tokens: 150 + cache_creation,
+            cost_usd: None,
+            is_fast: false,
+            cost,
+            project_path: None,
+        }
+    }
+
+    #[test]
+    fn test_model_breakdown_sums_cost_and_cache_creation() {
+        let entries = vec![
+            entry("claude-sonnet-4", 300, 0.10),
+            entry("claude-sonnet-4", 200, 0.25),
+            entry("gpt-5.5", 0, 0.05),
+        ];
+        let refs: Vec<&UsageEntry> = entries.iter().collect();
+        let breakdown = build_model_breakdown(&refs);
+
+        let sonnet = breakdown.iter().find(|b| b.model == "claude-sonnet-4").unwrap();
+        assert_eq!(sonnet.cache_creation_tokens, 500);
+        assert_eq!(sonnet.cost, 0.35);
+        assert_eq!(sonnet.request_count, 2);
+
+        let gpt = breakdown.iter().find(|b| b.model == "gpt-5.5").unwrap();
+        assert_eq!(gpt.cost, 0.05);
     }
 }

@@ -4,6 +4,7 @@ import type { Snapshot, Source, ReportType, UsageApi, RefreshStatus, PricingMap,
 import { ContributionCalendar } from './components/contribution-calendar';
 import { UsageTable } from './components/usage-table';
 import { UsageChart } from './components/usage-chart';
+import { sumBackendCost } from './components/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -94,10 +95,15 @@ function estimateCost(
   outputTokens: number,
   reasoningTokens: number,
   cacheReadTokens: number,
-  modelBreakdown: Array<{ model: string; inputTokens: number; outputTokens: number; reasoningTokens: number; cacheReadTokens: number }> | undefined,
+  modelBreakdown: Array<{ model: string; inputTokens: number; outputTokens: number; reasoningTokens: number; cacheReadTokens: number; cost?: number }> | undefined,
   pricing: PricingMap | null
 ): { cost: number; matched: boolean } {
   const defaultPricing: ModelPricing = { input: 3e-6, output: 15e-6, cacheCreate: 3.75e-6, cacheRead: 0.3e-6 };
+
+  const backendCost = sumBackendCost(modelBreakdown);
+  if (backendCost !== null) {
+    return { cost: backendCost, matched: true };
+  }
 
   const findPricing = (model: string): { pricing: ModelPricing; matched: boolean } => {
     if (!pricing) return { pricing: defaultPricing, matched: false };

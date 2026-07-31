@@ -5,7 +5,9 @@ use async_trait::async_trait;
 use tokio::sync::RwLock;
 
 use crate::core::adapter::{claude::ClaudeAdapter, codex::CodexAdapter, gemini::GeminiAdapter, opencode::OpenCodeAdapter, BlockAggregate, DailyAggregate, MonthlyAggregate, SessionAggregate, UsageAdapter, UsageEntry};
+use crate::core::cost::apply_costs;
 use crate::core::model::*;
+use crate::core::pricing::PricingCache;
 
 /// Cached entries for a single source (claude/codex/opencode)
 struct SourceCache {
@@ -52,8 +54,14 @@ impl NativeUsageProvider {
     pub async fn preload(&self) {
         let start = std::time::Instant::now();
 
+        let pricing = match PricingCache::new() {
+            Ok(cache) => cache.full_snapshot().await,
+            Err(_) => Default::default(),
+        };
+
         let mut handles = Vec::new();
         for source in [Source::Claude, Source::Codex, Source::Gemini, Source::Opencode] {
+            let pricing = pricing.clone();
             handles.push(tokio::task::spawn_blocking(move || {
                 let adapter_start = std::time::Instant::now();
                 let adapter: Box<dyn UsageAdapter> = match source {
@@ -67,6 +75,8 @@ impl NativeUsageProvider {
                     Ok(paths) => adapter.load_entries(&paths).unwrap_or_default(),
                     Err(_) => Vec::new(),
                 };
+                let mut entries = entries;
+                apply_costs(&mut entries, &pricing);
                 (source, entries, adapter_start.elapsed())
             }));
         }

@@ -247,6 +247,8 @@ mod tests {
                 reasoning_tokens: 50,
                 total_tokens: 1500,
                 request_count: 5,
+                cache_creation_tokens: 0,
+                cost: 0.0,
             }],
         }];
 
@@ -286,6 +288,8 @@ mod tests {
                     reasoning_tokens: 120,
                     total_tokens: 3300,
                     request_count: 12,
+                    cache_creation_tokens: 0,
+                    cost: 0.0,
                 },
                 ModelBreakdown {
                     model: "claude-sonnet-4".to_string(),
@@ -295,6 +299,8 @@ mod tests {
                     reasoning_tokens: 80,
                     total_tokens: 1700,
                     request_count: 8,
+                    cache_creation_tokens: 0,
+                    cost: 0.0,
                 },
             ],
         }];
@@ -326,6 +332,8 @@ mod tests {
                 reasoning_tokens: 50,
                 total_tokens: 1500,
                 request_count: 5,
+                cache_creation_tokens: 0,
+                cost: 0.0,
             }],
         }];
 
@@ -356,6 +364,8 @@ mod tests {
                 reasoning_tokens: 50,
                 total_tokens: 1500,
                 request_count: 5,
+                cache_creation_tokens: 0,
+                cost: 0.0,
             }],
         }];
 
@@ -405,6 +415,8 @@ mod tests {
                 reasoning_tokens: 50,
                 total_tokens: 1500,
                 request_count: 5,
+                cache_creation_tokens: 0,
+                cost: 0.0,
             }],
         }];
 

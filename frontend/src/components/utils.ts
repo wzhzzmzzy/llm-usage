@@ -16,3 +16,14 @@ export function formatTokens(n: number | undefined): string {
   if (v < 100_000_000_000) return `${parseFloat((v / 1_000_000).toFixed(2))}M`;
   return `${parseFloat((v / 1_000_000_000).toFixed(2))}B`;
 }
+
+/**
+ * Sum backend-computed per-model costs. Returns null when the breakdown
+ * predates backend costing (any item missing the field), so callers can
+ * fall back to their own pricing-table estimate.
+ */
+export function sumBackendCost(breakdown: Array<{ model: string; cost?: number }> | undefined): number | null {
+  if (!breakdown || breakdown.length === 0) return null;
+  if (!breakdown.every((item) => typeof item.cost === 'number')) return null;
+  return breakdown.reduce((total, item) => total + (item.cost ?? 0), 0);
+}

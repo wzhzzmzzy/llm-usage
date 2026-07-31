@@ -91,7 +91,6 @@ async fn get_snapshot(State(state): State<AppState>) -> Json<Snapshot> {
 }
 
 async fn get_pricing(State(state): State<AppState>) -> Json<serde_json::Value> {
-    state.pricing_cache.ensure_loaded().await;
-    let pricing_map = state.pricing_cache.get_snapshot_sync();
+    let pricing_map = state.pricing_cache.full_snapshot().await;
     Json(pricing_map.to_json())
 }
